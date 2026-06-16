@@ -1041,19 +1041,26 @@ workspace/
 
 **Key Rust crates:**
 ```toml
-aurora-dsql-sqlx-connector = { version = "0.1.2", features = ["pool", "occ"] }
-sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "macros", "migrate", "uuid", "chrono", "rust_decimal"] }
-axum = "0.7"
-lambda_http = "0.11"
-tower = "0.4"
+aurora-dsql-sqlx-connector = { version = "0.2.1", features = ["pool", "occ"] }
+sqlx = { version = "0.9.0", features = ["postgres", "runtime-tokio-rustls", "macros", "migrate", "uuid", "chrono", "rust_decimal"] }
+axum = { version = "0.8.9", features = ["macros"] }
+lambda_http = "1.2.1"
+lambda_runtime = "1.2.1"
+tower = "0.5"
+tower-http = { version = "0.7.0", features = ["trace", "cors"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rust_decimal = { version = "1", features = ["serde-with-str"] }
+rust_decimal_macros = "1"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-base64 = "0.21"
-aws-sdk-eventbridge = "1"
+base64 = "0.22"
+jsonwebtoken = "10.4.0"
+thiserror = "2.0.18"
+anyhow = "1.0.82"
 tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 ```
 
 ---
