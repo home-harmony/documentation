@@ -205,7 +205,7 @@ Resources:
   FamilyLedgerUserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
     Properties:
-      Domain: !Sub "familyledger-${Environment}"
+      Domain: !Sub "familyledger-${Environment}-${AWS::AccountId}"
       UserPoolId: !Ref FamilyLedgerUserPool
 
   # ─── API Gateway HTTP API ───────────────────────────────────────────────────
@@ -216,7 +216,7 @@ Resources:
       CorsConfiguration:
         AllowOrigins:
           - "http://localhost:4200"
-          - !Sub "https://${FamilyLedgerCdn}.cloudfront.net"
+          - !Sub "https://${FamilyLedgerCdn.DomainName}"
         AllowHeaders: [Content-Type, Authorization, X-Amz-Date, X-Api-Key]
         AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
         MaxAge: 300
@@ -321,7 +321,7 @@ Outputs:
     Export:
       Name: !Sub "${AWS::StackName}-ApiUrl"
   CloudFrontUrl:
-    Value: !Sub "https://${FamilyLedgerCdn}.cloudfront.net"
+    Value: !Sub "https://${FamilyLedgerCdn.DomainName}"
     Export:
       Name: !Sub "${AWS::StackName}-CloudFrontUrl"
 ```
@@ -331,8 +331,27 @@ Outputs:
 ## Step 4: Deploying with SAM
 
 ```powershell
+cd backend/infrastructure/sam
 sam deploy --guided
 ```
 
 Verify deployment outputs and connect Cognito and API Gateway URLs into your application configurations.
 
+---
+
+### Task is complete
+
+What These 2 Stacks Are:
+
+1. **`aws-sam-cli-managed-default`** (SAM CLI Internal Bucket)
+   * **Purpose**: Automatically managed by the AWS SAM CLI.
+   * **What it does**: Holds packaged CloudFormation templates and deployment artifacts before they are deployed to your application stacks.
+
+2. **`familyledger-core-dev`** (Your Core Application Stack)
+   * **All 9 Resources `CREATE_COMPLETE`**:
+     * **API Gateway (`lqnz5cqujj`) & Stage (`dev`)**: HTTP API endpoint with Cognito JWT Authorizer.
+     * **Cognito User Pool (`us-east-1_QOTPpUl2F`)**: User directory with custom claims (`family_id`, `family_role`).
+     * **Cognito App Client (`4l19jr5ejol71i5nkeo1kct3af`)**: OAuth2 client for SPA authentication.
+     * **Cognito Hosted UI Domain (`familyledger-dev-377161178071`)**: Custom prefix for authentication flows.
+     * **S3 SPA Bucket (`familyledger-spa-dev-377161178071`) & Policy**: Encrypted, private static storage.
+     * 
