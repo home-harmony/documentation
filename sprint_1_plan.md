@@ -76,7 +76,7 @@ graph TD
 #### Task 2.2: Add Workspace Dependencies
 * **Objective**: Set up base dependencies in workspace crates to enforce consistent versioning.
 * **Core dependencies**:
-  * `sqlx` (v0.8) with `postgres`, `runtime-tokio-rustls`, `uuid`, `chrono`, `rust_decimal`, `migrate` features.
+  * `sqlx` (v0.7) with `postgres`, `runtime-tokio-rustls`, `uuid`, `chrono`, `rust_decimal`, `migrate` features.
   * `aurora-dsql-sqlx-connector` (v0.1.2) for automatic IAM auth refresh and OCC retry logic.
   * `tokio` (v1) with full features.
   * `rust_decimal` (v1) with `serde-with-str` for float-free currency calculations.
@@ -233,3 +233,4 @@ async fn handler(_event: LambdaEvent<Request>) -> Result<Response, Error> {
 - [ ] Local database migration checks run successfully against PostgreSQL.
 - [ ] The Migration Runner Lambda compiles, deploys, and executes successfully on AWS.
 - [ ] Database contains all 14 schema tables and 11 async indexes verified via active schema checks.
+
