@@ -32,6 +32,7 @@ CREATE TABLE family_members (
   user_id         UUID          NOT NULL,        -- Cognito sub
   display_name    VARCHAR(100)  NOT NULL,
   role            VARCHAR(10)   NOT NULL CHECK (role IN ('owner','member','child','other')),
+  permissions     TEXT          NOT NULL DEFAULT '[]',  -- JSON array of Permission flags (used when role = 'other')
   relationship    VARCHAR(50),                    -- e.g. 'Grandma', 'Cousin'
   joined_at       TIMESTAMPTZ   NOT NULL DEFAULT now(),
   deleted_at      TIMESTAMPTZ,
@@ -45,6 +46,7 @@ CREATE TABLE family_invite_tokens (
   token           VARCHAR(64)   PRIMARY KEY,
   family_id       UUID          NOT NULL,
   role            VARCHAR(10)   NOT NULL CHECK (role IN ('owner','member','child','other')),
+  permissions     TEXT          NOT NULL DEFAULT '[]',  -- JSON array of Permission flags for Role::Other invites
   relationship    VARCHAR(50),
   created_by      UUID          NOT NULL,
   expires_at      TIMESTAMPTZ   NOT NULL,
@@ -56,16 +58,15 @@ CREATE TABLE family_invite_tokens (
 
 ### 1.2 Payment Cards & Accounts Context
 
-#### `cards_accounts`
+#### `payment_accounts`
 ```sql
-CREATE TABLE cards_accounts (
+CREATE TABLE payment_accounts (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id           UUID          NOT NULL,
   owner_member_id     UUID          NOT NULL,
   name                VARCHAR(200)  NOT NULL,
   kind                VARCHAR(20)   NOT NULL CHECK (kind IN ('credit_card','debit_card','cash','bank_account')),
   currency            CHAR(3)       NOT NULL,
-  current_balance     NUMERIC(19,4) NOT NULL DEFAULT 0,
   credit_limit        NUMERIC(19,4),             -- CreditCard only
   last_four           VARCHAR(4),
   bank_name           VARCHAR(100),
@@ -74,6 +75,23 @@ CREATE TABLE cards_accounts (
   created_at          TIMESTAMPTZ   NOT NULL DEFAULT now(),
   deleted_at          TIMESTAMPTZ
 );
+-- Note: accounts_service replaces cards_service.
+```
+
+#### `account_balance_snapshots`
+```sql
+CREATE TABLE account_balance_snapshots (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id      UUID          NOT NULL,
+  family_id       UUID          NOT NULL,
+  year_month      CHAR(7)       NOT NULL,  -- 'YYYY-MM', e.g. '2026-03'
+  closing_balance NUMERIC(19,4) NOT NULL,
+  currency        CHAR(3)       NOT NULL,
+  computed_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  UNIQUE (account_id, year_month)
+);
+-- Computed monthly by accounts_service Lambda on EventBridge Scheduler trigger.
+-- Current balance = latest snapshot + delta from ledger since snapshot date.
 ```
 
 ---
@@ -99,12 +117,15 @@ CREATE TABLE ledger_transactions (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id               UUID          NOT NULL,
   recorded_by             UUID          NOT NULL,  -- member_id
-  kind                    VARCHAR(20)   NOT NULL CHECK (kind IN ('income','expense','transfer','cash_withdrawal')),
+  kind                    VARCHAR(20)   NOT NULL CHECK (kind IN ('income','expense','transfer','cash_withdrawal','loan_payment','reversal')),
   amount_value            NUMERIC(19,4) NOT NULL,
   amount_currency         CHAR(3)       NOT NULL,
   source_account_id       UUID,                    -- NULL for external income
   destination_account_id  UUID,                    -- NULL for external expense
-  category_id             UUID          NOT NULL,
+  destination_amount_value   NUMERIC(19,4),  -- only for cross-currency Transfer
+  destination_amount_currency CHAR(3),        -- only for cross-currency Transfer
+  category_id             UUID,
+  amendment_of_id         UUID,           -- NULL for original entries; points to corrected tx
   tags                    TEXT          NOT NULL DEFAULT '[]',  -- JSON array as text
   description             TEXT,
   occurred_at             TIMESTAMPTZ   NOT NULL,
@@ -118,6 +139,23 @@ CREATE TABLE ledger_transactions (
 
 ### 1.4 Debt Planner Context
 
+#### `debt_loan_kinds`
+```sql
+CREATE TABLE debt_loan_kinds (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  family_id   UUID,            -- NULL = system-wide standard kind
+  code        VARCHAR(50)  NOT NULL,
+  name        VARCHAR(200) NOT NULL,
+  is_system   BOOLEAN      NOT NULL DEFAULT false,
+  sort_order  SMALLINT     NOT NULL DEFAULT 0,
+  deleted_at  TIMESTAMPTZ,
+  UNIQUE (family_id, code)
+);
+-- System seeds (family_id NULL, is_system TRUE):
+-- mortgage, car_loan, personal_loan, credit_card, student_loan,
+-- medical_debt, payday_loan, heloc, business_loan, family_loan, other
+```
+
 #### `debt_loans`
 ```sql
 CREATE TABLE debt_loans (
@@ -125,7 +163,7 @@ CREATE TABLE debt_loans (
   family_id             UUID          NOT NULL,
   name                  VARCHAR(200)  NOT NULL,
   lender                VARCHAR(200),
-  kind                  VARCHAR(30)   NOT NULL CHECK (kind IN ('mortgage','car_loan','personal_loan','credit_card','other')),
+  loan_kind_id          UUID          NOT NULL,
   linked_account_id     UUID,
   principal_value       NUMERIC(19,4) NOT NULL,
   principal_currency    CHAR(3)       NOT NULL,
@@ -155,6 +193,7 @@ CREATE TABLE debt_loan_payments (
   principal_portion  NUMERIC(19,4) NOT NULL,
   interest_portion   NUMERIC(19,4) NOT NULL,
   remaining_balance  NUMERIC(19,4) NOT NULL,
+  linked_transaction_id UUID,
   created_at         TIMESTAMPTZ   NOT NULL DEFAULT now(),
   idempotency_key    UUID          NOT NULL UNIQUE
 );
@@ -193,6 +232,7 @@ CREATE TABLE recurring_payments (
   frequency_config     TEXT          NOT NULL DEFAULT '{}',  -- JSON config
   payment_account_id   UUID,
   category_id          UUID          NOT NULL,
+  linked_loan_id       UUID,
   next_due_date        DATE,
   is_active            BOOLEAN       NOT NULL DEFAULT true,
   notes                TEXT,
@@ -230,6 +270,9 @@ CREATE TABLE budget_monthly_budgets (
   total_income_currency        CHAR(3),
   total_committed_value        NUMERIC(19,4) NOT NULL DEFAULT 0,
   total_discretionary_value    NUMERIC(19,4) NOT NULL DEFAULT 0,
+  status                       VARCHAR(10)  NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','active','closed')),
+  approved_by                  UUID,        -- member_id of Owner who approved
+  approved_at                  TIMESTAMPTZ,
   deleted_at                   TIMESTAMPTZ,
   UNIQUE (family_id, year_month)
 );
@@ -248,25 +291,59 @@ CREATE TABLE budget_envelopes (
   limit_currency        CHAR(3)       NOT NULL,
   spent_value           NUMERIC(19,4) NOT NULL DEFAULT 0,
   alert_at_percent      SMALLINT      NOT NULL DEFAULT 80,
-  alerted               BOOLEAN       NOT NULL DEFAULT false
+  alerted               BOOLEAN       NOT NULL DEFAULT false,
+  deleted_at            TIMESTAMPTZ
 );
 ```
 
 #### `planning_savings_goals`
 ```sql
 CREATE TABLE planning_savings_goals (
-  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id              UUID          NOT NULL,
-  name                   VARCHAR(200)  NOT NULL,
-  target_amount_value    NUMERIC(19,4) NOT NULL,
-  target_amount_currency CHAR(3)       NOT NULL,
-  target_date            DATE          NOT NULL,
-  current_saved_value    NUMERIC(19,4) NOT NULL DEFAULT 0,
-  monthly_contribution   NUMERIC(19,4),
-  status                 VARCHAR(20)   NOT NULL DEFAULT 'on_track' CHECK (status IN ('on_track','behind','achieved','paused')),
-  created_at             TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  deleted_at             TIMESTAMPTZ
+  id                           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  family_id                    UUID          NOT NULL,
+  name                         VARCHAR(200)  NOT NULL,
+  target_amount_value          NUMERIC(19,4) NOT NULL,
+  target_amount_currency       CHAR(3)       NOT NULL,
+  target_date                  DATE          NOT NULL,
+  target_monthly_contribution  NUMERIC(19,4),
+  status                       VARCHAR(20)   NOT NULL DEFAULT 'on_track' CHECK (status IN ('on_track','behind','achieved','paused')),
+  created_at                   TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  deleted_at                   TIMESTAMPTZ
 );
+```
+
+#### `goal_contributions`
+```sql
+CREATE TABLE goal_contributions (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  goal_id               UUID          NOT NULL,
+  family_id             UUID          NOT NULL,
+  amount_value          NUMERIC(19,4) NOT NULL,
+  amount_currency       CHAR(3)       NOT NULL,
+  contributed_at        DATE          NOT NULL,
+  linked_transaction_id UUID,
+  note                  TEXT,
+  created_at            TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  idempotency_key       UUID          NOT NULL UNIQUE
+);
+```
+
+---
+
+### 1.7 Currency & Exchange Rates
+
+#### `exchange_rates`
+```sql
+CREATE TABLE exchange_rates (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  base_currency  CHAR(3)       NOT NULL,
+  quote_currency CHAR(3)       NOT NULL,
+  rate           NUMERIC(18,8) NOT NULL,  -- 1 quote_currency = rate base_currency
+  fetched_at     TIMESTAMPTZ   NOT NULL,
+  UNIQUE (base_currency, quote_currency)
+);
+-- Latest rates only — no history stored (ADR-0015).
+-- Populated daily by exchange_rate_fetcher Lambda (BNM provider by default).
 ```
 
 ---
@@ -277,7 +354,8 @@ Each index statement is defined in a separate migration file and executed with `
 
 ```sql
 CREATE INDEX ASYNC idx_members_family ON family_members (family_id) WHERE deleted_at IS NULL;
-CREATE INDEX ASYNC idx_accounts_family ON cards_accounts (family_id) WHERE deleted_at IS NULL;
+CREATE INDEX ASYNC idx_accounts_family ON payment_accounts (family_id) WHERE deleted_at IS NULL;
+CREATE INDEX ASYNC idx_balance_snapshots_account ON account_balance_snapshots (account_id, year_month DESC);
 CREATE INDEX ASYNC idx_tx_family_time ON ledger_transactions (family_id, occurred_at, id)
   INCLUDE (kind, amount_value, amount_currency, category_id, source_account_id, destination_account_id)
   WHERE deleted_at IS NULL;
@@ -285,11 +363,14 @@ CREATE INDEX ASYNC idx_tx_account_src ON ledger_transactions (source_account_id,
   WHERE deleted_at IS NULL;
 CREATE INDEX ASYNC idx_tx_account_dst ON ledger_transactions (destination_account_id, occurred_at, id)
   WHERE deleted_at IS NULL;
+CREATE INDEX ASYNC idx_loan_kinds_family ON debt_loan_kinds (family_id) WHERE deleted_at IS NULL;
 CREATE INDEX ASYNC idx_loans_family ON debt_loans (family_id) WHERE deleted_at IS NULL;
-CREATE INDEX ASYNC idx_loan_payments ON debt_loan_payments (loan_id, paid_at DESC, id DESC);
+CREATE INDEX ASYNC idx_loan_payments_loan ON debt_loan_payments (loan_id, paid_at DESC, id DESC);
 CREATE INDEX ASYNC idx_recurring_family ON recurring_payments (family_id) WHERE deleted_at IS NULL AND is_active = true;
 CREATE INDEX ASYNC idx_recurring_due ON recurring_payments (next_due_date) WHERE deleted_at IS NULL AND is_active = true;
+CREATE INDEX ASYNC idx_recurring_linked_loan ON recurring_payments (linked_loan_id) WHERE deleted_at IS NULL AND linked_loan_id IS NOT NULL;
 CREATE INDEX ASYNC idx_recurring_records ON recurring_payment_records (recurring_payment_id, paid_at DESC, id DESC);
 CREATE INDEX ASYNC idx_goals_family ON planning_savings_goals (family_id) WHERE deleted_at IS NULL;
+CREATE INDEX ASYNC idx_goal_contributions ON goal_contributions (goal_id, contributed_at DESC, id DESC);
+CREATE INDEX ASYNC idx_exchange_rates ON exchange_rates (base_currency, quote_currency);
 ```
-

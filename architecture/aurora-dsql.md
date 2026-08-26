@@ -66,8 +66,9 @@ pub async fn save_transaction_with_retry(
             r#"
             INSERT INTO ledger_transactions (
                 id, family_id, recorded_by, kind, amount_value, amount_currency,
+                destination_amount_value, destination_amount_currency,
                 category_id, occurred_at, idempotency_key
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             "#,
             tx_data.id,
             tx_data.family_id,
@@ -75,6 +76,8 @@ pub async fn save_transaction_with_retry(
             tx_data.kind.as_str(),
             tx_data.amount.value,
             tx_data.amount.currency.as_str(),
+            tx_data.destination_amount.as_ref().map(|m| m.value),
+            tx_data.destination_amount.as_ref().map(|m| m.currency.as_str()),
             tx_data.category_id,
             tx_data.occurred_at,
             tx_data.idempotency_key
