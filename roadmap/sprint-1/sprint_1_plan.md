@@ -1,7 +1,7 @@
 # FamilyLedger — Sprint 1 Execution Plan (Infrastructure & Foundation)
 
 ## Sprint 1 Goal
-Establish the core serverless cloud infrastructure on AWS, initialize the Rust multi-crate workspace (`backend/`), configure the Amazon Aurora DSQL database cluster, set up the CDC (Change Data Capture) fanout stream, implement the Database Migration Runner Lambda, and deploy the initial schema migrations.
+Establish the core serverless cloud infrastructure on AWS, initialize the Rust multi-crate workspace (`backend/`), configure the Amazon Aurora DSQL database cluster, set up the CDC (Change Data Capture) fanout stream, implement the Database Migration Runner Lambda, and deploy the initial schema migrations (18 tables and 16 asynchronous indexes).
 
 **Duration**: 2 Weeks (10 Working Days)
 
@@ -13,9 +13,9 @@ Establish the core serverless cloud infrastructure on AWS, initialize the Rust m
 graph TD
     subgraph AWS Cloud
         APIGW[API Gateway HTTP API] -->|JWT Validate| Cognito[AWS Cognito User Pool]
-        APIGW -->|Proxy Requests| ServiceLambda[Rust microservice Lambdas]
+        APIGW -->|Proxy Requests with X-Family-Id| ServiceLambda[Rust microservice Lambdas]
         
-        ServiceLambda -->|Read/Write (OCC)| DSQL[Amazon Aurora DSQL]
+        ServiceLambda -->|Read/Write OCC| DSQL[Amazon Aurora DSQL]
         DSQL -->|Native CDC| Kinesis[Kinesis Data Stream]
         Kinesis -->|Trigger| CDCFanout[CDC Fanout Lambda]
         CDCFanout -->|Semantic Events| EventBridge[AWS EventBridge]
@@ -35,11 +35,11 @@ graph TD
 #### Task 1.1: IAM & CloudFormation/SAM Template Setup
 * **Objective**: Create the Infrastructure-as-Code (IaC) templates (AWS SAM / CloudFormation) to model the environment cleanly.
 * **Details**:
-  * Define AWS Cognito User Pool, Cognito App Client, and OAuth scopes.
+  * Define AWS Cognito User Pool, Cognito App Client, and OAuth scopes (identity only; tenant context passed via `X-Family-Id`, ADR-0011).
   * Define API Gateway HTTP API with a JWT Authorizer pointing to the Cognito User Pool.
   * Define S3 Bucket for Angular static hosting, configured for private access with CloudFront Origin Access Control (OAC).
   * Configure CloudFront Distribution to serve files from the S3 bucket with SPA routing fallbacks (routing 404s back to `index.html`).
-  * See [Task 1.1 Detailed Guide](file:///c:/Users/demiu/my-rust-projects/home-harmony/documentation/roadmap/sprint-1/task_1_1_detailed_guide.md) for full CloudFormation template and steps.
+  * See [Task 1.1 Detailed Guide](task_1_1_detailed_guide.md) for full CloudFormation template and steps.
 
 #### Task 1.2: Database & Event Stream Provisioning
 * **Objective**: Set up Aurora DSQL serverless instance and hook up Change Data Capture (CDC) pipeline.
@@ -95,35 +95,44 @@ graph TD
 > 4. Do not use foreign keys (`REFERENCES`), auto-increment sequence serials (`SERIAL`), or JSONB columns.
 
 #### Task 3.1: Create Migration Files
-We maintain 25 individual migration files under `backend/migrations/` to conform to the single DDL statement per file constraint:
+We maintain 34 individual migration files under `backend/migrations/` to conform to the single DDL statement per file constraint:
 
 ```
 backend/migrations/
 ├── 20260616000001_create_family_families.sql
 ├── 20260616000002_create_family_members.sql
 ├── 20260616000003_create_family_invite_tokens.sql
-├── 20260616000004_create_cards_accounts.sql
-├── 20260616000005_create_ledger_categories.sql
-├── 20260616000006_create_ledger_transactions.sql
-├── 20260616000007_create_debt_loans.sql
-├── 20260616000008_create_debt_loan_payments.sql
-├── 20260616000009_create_debt_repayment_plans.sql
-├── 20260616000010_create_recurring_payments.sql
-├── 20260616000011_create_recurring_payment_records.sql
-├── 20260616000012_create_budget_monthly_budgets.sql
-├── 20260616000013_create_budget_envelopes.sql
-├── 20260616000014_create_planning_savings_goals.sql
-├── 20260616000015_idx_members_family.sql
-├── 20260616000016_idx_accounts_family.sql
-├── 20260616000017_idx_tx_family_time.sql
-├── 20260616000018_idx_tx_account_src.sql
-├── 20260616000019_idx_tx_account_dst.sql
-├── 20260616000020_idx_loans_family.sql
-├── 20260616000021_idx_loan_payments.sql
-├── 20260616000022_idx_recurring_family.sql
-├── 20260616000023_idx_recurring_due.sql
-├── 20260616000024_idx_recurring_records.sql
-└── 20260616000025_idx_goals_family.sql
+├── 20260616000004_create_payment_accounts.sql
+├── 20260616000005_create_account_balance_snapshots.sql
+├── 20260616000006_create_ledger_categories.sql
+├── 20260616000007_create_ledger_transactions.sql
+├── 20260616000008_create_debt_loan_kinds.sql
+├── 20260616000009_create_debt_loans.sql
+├── 20260616000010_create_debt_loan_payments.sql
+├── 20260616000011_create_debt_repayment_plans.sql
+├── 20260616000012_create_recurring_payments.sql
+├── 20260616000013_create_recurring_payment_records.sql
+├── 20260616000014_create_budget_monthly_budgets.sql
+├── 20260616000015_create_budget_envelopes.sql
+├── 20260616000016_create_planning_savings_goals.sql
+├── 20260616000017_create_goal_contributions.sql
+├── 20260616000018_create_exchange_rates.sql
+├── 20260616000019_idx_members_family.sql
+├── 20260616000020_idx_accounts_family.sql
+├── 20260616000021_idx_balance_snapshots_account.sql
+├── 20260616000022_idx_tx_family_time.sql
+├── 20260616000023_idx_tx_account_src.sql
+├── 20260616000024_idx_tx_account_dst.sql
+├── 20260616000025_idx_loan_kinds_family.sql
+├── 20260616000026_idx_loans_family.sql
+├── 20260616000027_idx_loan_payments.sql
+├── 20260616000028_idx_recurring_family.sql
+├── 20260616000029_idx_recurring_due.sql
+├── 20260616000030_idx_recurring_linked_loan.sql
+├── 20260616000031_idx_recurring_records.sql
+├── 20260616000032_idx_goals_family.sql
+├── 20260616000033_idx_goal_contributions.sql
+└── 20260616000034_idx_exchange_rates.sql
 ```
 
 ---
@@ -182,7 +191,7 @@ async fn handler(_event: LambdaEvent<Request>) -> Result<Response, Error> {
 * **Objective**: Set up a local test database using PostgreSQL 16 via Docker/Testcontainers to validate the schema.
 * **Details**:
   * Create a test utility in `infrastructure/src/test_utils.rs` that starts a container, runs the embedded SQL migrations, and exposes a connection pool.
-  * Ensure that local PostgreSQL can apply all 25 migration files without throwing exceptions.
+  * Ensure that local PostgreSQL can apply all 34 migration files without throwing exceptions.
 
 #### Task 5.2: Compilation & Deploy
 * **Objective**: Compile the Rust binary and deploy the CloudFormation/SAM stack.
@@ -204,5 +213,4 @@ async fn handler(_event: LambdaEvent<Request>) -> Result<Response, Error> {
 - [ ] Rust Cargo workspace compiles cleanly with zero warnings/errors.
 - [ ] Local database migration checks run successfully against PostgreSQL.
 - [ ] The Migration Runner Lambda compiles, deploys, and executes successfully on AWS.
-- [ ] Database contains all 14 schema tables and 11 async indexes verified via active schema checks.
-
+- [ ] Database contains all **18 schema tables** and **16 asynchronous indexes** (34 migrations total) verified via active schema checks.
