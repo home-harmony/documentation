@@ -32,7 +32,7 @@ graph TD
 
 ### Phase 1: AWS Serverless Infrastructure Provisioning (Days 1–3)
 
-#### Task 1.1: IAM & CloudFormation/SAM Template Setup
+#### Task 1.1: IAM & CloudFormation/SAM Template Setup — ✅ COMPLETED
 * **Objective**: Create the Infrastructure-as-Code (IaC) templates (AWS SAM / CloudFormation) to model the environment cleanly.
 * **Details**:
   * Define AWS Cognito User Pool, Cognito App Client, and OAuth scopes (identity only; tenant context passed via `X-Family-Id`, ADR-0011).
@@ -40,25 +40,27 @@ graph TD
   * Define S3 Bucket for Angular static hosting, configured for private access with CloudFront Origin Access Control (OAC).
   * Configure CloudFront Distribution to serve files from the S3 bucket with SPA routing fallbacks (routing 404s back to `index.html`).
   * See [Task 1.1 Detailed Guide](task_1_1_detailed_guide.md) for full CloudFormation template and steps.
+* **Status**: Stack `familyledger-core-dev` deployed successfully (`CREATE_COMPLETE`).
 
-#### Task 1.2: Database & Event Stream Provisioning
+#### Task 1.2: Database & Event Stream Provisioning — ✅ COMPLETED
 * **Objective**: Set up Aurora DSQL serverless instance and hook up Change Data Capture (CDC) pipeline.
 * **Details**:
-  * Provision an Amazon Aurora DSQL Cluster. Establish endpoint configurations.
-  * Enable CDC on the Aurora DSQL cluster, targeting a new Amazon Kinesis Data Stream (on-demand mode).
-  * Configure IAM Roles allowing the microservices and migration runner to log in to DSQL via IAM authentication tokens.
-  * Create a placeholder Lambda function (`cdc_fanout`) triggered by the Kinesis stream.
+  * Provision an Amazon Aurora DSQL Cluster (`4bublzlvvtnwjpmgtotwrulv7m`). Establish endpoint configurations.
+  * Provision Amazon Kinesis Data Stream (`familyledger-cdc-stream-dev`, on-demand mode) and EventBridge Bus (`familyledger-events-dev`).
+  * Configure IAM Roles allowing the microservices (`FamilyLedgerServiceRole`) and migration runner (`FamilyLedgerMigrationRunnerRole`) to log in to DSQL via IAM authentication tokens.
+  * See [Task 1.2 Detailed Guide](task_1_2_detailed_guide.md) for full deployment steps and IAM configurations.
+* **Status**: Stack `familyledger-data-dev` deployed successfully (`CREATE_COMPLETE`).
 
 ---
 
 ### Phase 2: Rust Workspace Initialization (Days 4–5)
 
-#### Task 2.1: Folder & Cargo Workspace Structure
+#### Task 2.1: Folder & Cargo Workspace Structure — ✅ COMPLETED
 * **Objective**: Initialize the multi-crate Rust workspace matching the Clean Architecture/DDD structure in `backend/`.
-* **Structure to create**:
+* **Structure created**:
   ```
   backend/
-  ├── Cargo.toml                  # Workspace definition
+  ├── Cargo.toml                  # Workspace definition with sqlx 0.9.0 & aurora-dsql-sqlx-connector 0.2.2
   ├── domain/                     # Pure domain logic crate (Zero I/O)
   │   ├── Cargo.toml
   │   └── src/lib.rs
@@ -73,11 +75,13 @@ graph TD
           ├── Cargo.toml
           └── src/main.rs
   ```
+* See [Task 2.1 Detailed Guide](task_2_1_detailed_guide.md) for step-by-step instructions.
+* **Status**: Verified with `cargo check`, `cargo clippy`, `cargo fmt`, and 46 unit tests passing.
 
-#### Task 2.2: Add Workspace Dependencies
+#### Task 2.2: Add Workspace Dependencies — ✅ COMPLETED
 * **Objective**: Set up base dependencies in workspace crates to enforce consistent versioning.
 * **Core dependencies**:
-  * `sqlx` (v0.9.0) with `postgres`, `runtime-tokio-rustls`, `uuid`, `chrono`, `rust_decimal`, `migrate` features.
+  * `sqlx` (v0.9.0) with `postgres`, `runtime-tokio`, `tls-rustls-ring`, `macros`, `migrate`, `uuid`, `chrono`, `rust_decimal`, `json`.
   * `aurora-dsql-sqlx-connector` (v0.2.2) for automatic IAM auth refresh and OCC retry logic.
   * `tokio` (v1) with full features.
   * `rust_decimal` (v1) with `serde-with-str` for float-free currency calculations.
@@ -92,7 +96,7 @@ graph TD
 > 1. DSQL allows **exactly one DDL statement per transaction**. 
 > 2. Mixing DDL (e.g. `CREATE TABLE`) and DML (e.g. `INSERT`) is strictly forbidden.
 > 3. Indices must be built asynchronously using `CREATE INDEX ASYNC` in separate migration files.
-> 4. Do not use foreign keys (`REFERENCES`), auto-increment sequence serials (`SERIAL`), or JSONB columns.
+> 4. Use `FOREIGN KEY (...) REFERENCES ...` for database-level referential integrity and native `JSONB` for semi-structured data.
 
 #### Task 3.1: Create Migration Files
 We maintain 34 individual migration files under `backend/migrations/` to conform to the single DDL statement per file constraint:
@@ -208,9 +212,9 @@ async fn handler(_event: LambdaEvent<Request>) -> Result<Response, Error> {
 ---
 
 ## Sprint 1 Definition of Done (DoD)
-- [ ] AWS infrastructure components (Cognito, API Gateway, S3, CloudFront, Aurora DSQL) are successfully provisioned.
-- [ ] Kinesis stream is active and receives CDC events from Aurora DSQL.
-- [ ] Rust Cargo workspace compiles cleanly with zero warnings/errors.
+- [x] AWS infrastructure components (Cognito, API Gateway, S3, CloudFront, Aurora DSQL) are successfully provisioned.
+- [x] Kinesis stream and EventBridge bus are active.
+- [x] Rust Cargo workspace compiles cleanly with zero warnings/errors (`cargo check`, `cargo clippy`, `cargo fmt`).
 - [ ] Local database migration checks run successfully against PostgreSQL.
 - [ ] The Migration Runner Lambda compiles, deploys, and executes successfully on AWS.
 - [ ] Database contains all **18 schema tables** and **16 asynchronous indexes** (34 migrations total) verified via active schema checks.

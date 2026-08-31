@@ -2,12 +2,16 @@
 
 Welcome to the central documentation repository for **FamilyLedger**, a private, family-shared financial hub built on AWS Serverless and Rust.
 
+> 🇷🇺 **Для пользователей и членов семьи**: Описание проекта простыми словами на русском языке доступно в файле **[README.ru.md](README.ru.md)**.
+
 ---
 
 ## 📚 Documentation Index
 
 ```
 documentation/
+├── README.md                          # Engineering index
+├── README.ru.md                       # Описание для всей семьи простыми словами (Russian)
 ├── architecture/
 │   ├── system-overview.md             # Cloud architecture, AWS services & event streaming
 │   ├── aurora-dsql.md                 # Aurora DSQL constraints, OCC, IAM & migration rules
@@ -43,7 +47,9 @@ documentation/
 │   ├── sprint-roadmap.md              # S1-S7 execution roadmap (34 migrations, ~15 weeks)
 │   └── sprint-1/
 │       ├── sprint_1_plan.md           # Sprint 1 detailed execution plan (34 migrations)
-│       └── task_1_1_detailed_guide.md # Task 1.1 AWS SAM / CloudFormation guide
+│       ├── task_1_1_detailed_guide.md # Task 1.1 AWS SAM / CloudFormation guide
+│       ├── task_1_2_detailed_guide.md # Task 1.2 Database & Streaming guide
+│       └── task_2_1_detailed_guide.md # Task 2.1 Rust Multi-Crate Workspace guide
 │
 └── testing/
     └── testing-strategy.md            # Test pyramid: Unit, Testcontainers PG, Axum, E2E
@@ -52,39 +58,3 @@ documentation/
 ---
 
 ## 🚀 Quick Navigation
-
-| Area | Key Document | Summary |
-| :--- | :--- | :--- |
-| **System Architecture** | [system-overview.md](architecture/system-overview.md) | AWS Cloud layout, API Gateway, Rust Lambdas, Aurora DSQL, CDC, Schedulers |
-| **Database Constraints** | [aurora-dsql.md](architecture/aurora-dsql.md) | Aurora DSQL rules: UUID PKs, no FKs, 1 DDL per file, OCC retry |
-| **Database Schema** | [database-schema.md](architecture/database-schema.md) | Full SQL DDL for 18 tables and 16 asynchronous indexes (34 total) |
-| **API Specification** | [api-design.md](architecture/api-design.md) | Endpoints, `X-Family-Id` auth, amendments, budget approvals |
-| **Domain Model** | [bounded-contexts.md](domain/bounded-contexts.md) | Aggregates and entities across all 9 bounded contexts |
-| **Event Storming** | [event-storming.md](domain/event-storming.md) | 24 domain events flow via DSQL CDC $\rightarrow$ Kinesis $\rightarrow$ EventBridge |
-| **Glossary & Formulas** | [ubiquitous-language.md](domain/ubiquitous-language.md) | `True Disposable Surplus`, `DebtServiceCost`, and 10 strict invariants |
-| **Architectural Decisions** | [ADR Index](decisions/README.md) | Record of all 16 accepted architectural decisions (0001–0016) |
-| **Business Plan** | [business-plan.md](roadmap/business-plan.md) | Problem, multi-currency solution, target users, and monthly cost estimate |
-| **Sprint Roadmap** | [sprint-roadmap.md](roadmap/sprint-roadmap.md) | Sprint schedule and deliverables for S1 through S7 |
-| **Testing Strategy** | [testing-strategy.md](testing/testing-strategy.md) | 95%+ pure domain unit testing and Testcontainers PG tests |
-
----
-
-## ⚡ Non-Negotiable Engineering Rules
-
-1. **Money is always `rust_decimal::Decimal`** — never `f64` or `f32`.
-2. **All primary keys must be random UUIDs** (UUID v4 or v7) using `gen_random_uuid()`.
-3. **All list/search endpoints must use keyset (cursor) pagination** — `OFFSET` is banned.
-4. **Strict limits**: UI page size $\le 50$, batch write size $\le 500$.
-5. **No native JSONB column types** — store as `TEXT`, cast `::jsonb` during queries.
-6. **Soft-deletes everywhere** (`deleted_at TIMESTAMPTZ NULL`) — no hard DELETEs on business data.
-7. **No database polling for downstream events** — rely on Aurora DSQL native CDC $\rightarrow$ Kinesis $\rightarrow$ EventBridge.
-8. **All CDC consumers must be idempotent** — deduplicate using `txId + table + PK`.
-9. **Never trust `family_id` from client request bodies** — extract `user_id` from validated JWT and authenticate against `family_members` using the `X-Family-Id` header (ADR-0011).
-10. **Transactions are immutable** — `PUT /transactions/{id}` is prohibited; corrections use the reversal pattern (`POST /transactions/{id}/amend`, ADR-0012).
-11. **Use `aurora-dsql-sqlx-connector` (v0.2.2)** with `occ` feature enabled.
-12. **Use `BEGIN READ ONLY` in read-only handlers** to eliminate OCC conflict overhead.
-13. **One DDL statement per migration file** — separate tables and async indexes into distinct files.
-14. **Never modify already applied migration files** — create new sequential migrations.
-15. **Maintain 95%+ unit test coverage on the pure `domain/` crate**.
-16. **DB integration tests run against real PostgreSQL** (via Testcontainers) — no mocked SQL queries.
-17. **Role-based access control enforced at API layer** — `Role::Child` is blocked from loans, debt plans, and family reports; `Role::Other` permissions are verified per request.
