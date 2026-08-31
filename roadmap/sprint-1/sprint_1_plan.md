@@ -99,6 +99,9 @@ graph TD
 > 4. Use `FOREIGN KEY (...) REFERENCES ...` for database-level referential integrity and native `JSONB` for semi-structured data.
 
 #### Task 3.1: Create Migration Files
+* **Detailed Implementation Guide**: [Task 3.1 Detailed Guide](task_3_1_detailed_guide.md)
+* **Objective**: Author all 34 database migration files conforming to Aurora DSQL constraints (1 DDL per file, `CREATE INDEX ASYNC`, UUID v4/v7 PKs, explicit foreign keys, native `JSONB`).
+
 We maintain 34 individual migration files under `backend/migrations/` to conform to the single DDL statement per file constraint:
 
 ```
