@@ -22,7 +22,7 @@ Chosen option: **Keyset (Cursor-Based) Pagination**, because it executes via dir
 ### Positive Consequences
 * Stable $O(1)$ query latency across all page depths.
 * Immune to pagination drift when new transactions are inserted concurrently.
-* Supported by time-sortable **UUID v7** identifiers which provide deterministic ordering tie-breakers.
+* Supported by time-sortable **UUID v7** (RFC 9562) identifiers which provide sequential B-tree writes, zero page fragmentation, and deterministic ordering tie-breakers. See [Aurora DSQL Primary Key Strategy](../architecture/aurora-dsql.md#4-primary-key-strategy-uuid-v4-vs-uuid-v7-rfc-9562).
 
 ### Negative Consequences / Trade-offs
 * Random access to arbitrary page numbers (e.g. "Jump to Page 47") is not supported; pagination is sequential (Next / Previous cursor).
@@ -32,4 +32,4 @@ Chosen option: **Keyset (Cursor-Based) Pagination**, because it executes via dir
 * `OFFSET` is explicitly banned in all SQL queries and API contracts.
 * All list queries must accept `cursor: Option<String>` and return `next_cursor: Option<String>`.
 * Composite index `(family_id, occurred_at, id)` created on transaction tables.
-
+* Time-series entity IDs are generated using `Uuid::now_v7()`.
