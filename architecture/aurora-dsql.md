@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-Amazon Aurora DSQL is a distributed, serverless relational database offering active-active multi-region availability with wire compatibility for PostgreSQL 16. However, its distributed architecture introduces specific constraints that fundamentally dictate how we write schema, queries, and transactions.
+Amazon Aurora DSQL is a distributed, serverless relational database offering active-active multi-region availability with wire compatibility for PostgreSQL 16. With full support for transactional foreign keys and native `JSONB` data types, Aurora DSQL combines the operational simplicity of serverless distributed computing with PostgreSQL relational integrity.
 
 ---
 
@@ -11,12 +11,12 @@ Amazon Aurora DSQL is a distributed, serverless relational database offering act
 | Feature / Behavior | PostgreSQL 16 | Amazon Aurora DSQL | FamilyLedger Strategy |
 | :--- | :--- | :--- | :--- |
 | **Storage Architecture** | Heap-based tables | Primary key-ordered distributed B-trees | **Mandatory UUID v4 / v7 PKs** (`gen_random_uuid()`). Sequential/SERIAL PKs cause severe write hot-spots. |
-| **Foreign Keys** | DB-enforced (`REFERENCES`) | **Not supported** | Enforce referential integrity in Rust domain layer; all queries partition by `family_id`. |
-| **JSON Data Types** | Native `JSON` / `JSONB` | **Not supported as column type** | Store JSON as `TEXT` in tables; cast with `::jsonb` at query time for JSON operators. |
-| **Identity / Serials** | `SERIAL`, `BIGSERIAL` | **Not supported** | Use `gen_random_uuid()` for PKs; `GENERATED ALWAYS AS IDENTITY` only for non-PK sequences. |
+| **Foreign Keys** | DB-enforced (`REFERENCES`) | **Fully Supported** | Use explicit `FOREIGN KEY (parent_id) REFERENCES parent_table(id)` to enforce referential integrity across bounded contexts. |
+| **JSON Data Types** | Native `JSON` / `JSONB` | **Fully Supported (`JSONB`)** | Use native `JSONB` for schema-flexible attributes (`permissions`, `metadata`, `extra_params`). |
+| **Identity / Serials** | `SERIAL`, `BIGSERIAL` | **Not recommended for PKs** | Use `gen_random_uuid()` for PKs; `GENERATED ALWAYS AS IDENTITY` only for non-PK sequences. |
 | **Truncation** | `TRUNCATE TABLE` | **Not supported** | Use `DELETE FROM table WHERE ...` in batches $\le 500$ rows. |
 | **Database Triggers** | `CREATE TRIGGER` | **Not supported** | Implement all calculations, validations, and downstream events in Rust code. |
-| **Cascading Deletes** | `ON DELETE CASCADE` | **Not supported** | Soft-deletes (`deleted_at TIMESTAMPTZ NULL`) with code-level cascading. |
+| **Cascading Deletes** | `ON DELETE CASCADE` | **Supported (RESTRICT preferred)** | Prefer `ON DELETE RESTRICT` with explicit application-level soft-deletes (`deleted_at TIMESTAMPTZ NULL`). |
 | **DDL Transactions** | Multi-statement DDL | **1 DDL statement per transaction** | Exactly **1 DDL operation per migration file**. Never mix DDL and DML in the same file. |
 | **Index Builds** | Blocking `CREATE INDEX` | `CREATE INDEX ASYNC` only | Write index creations in dedicated migration files; monitor status via `SELECT * FROM sys.jobs`. |
 | **Write Tx Limit** | Unlimited | **3,000-row transaction limit** | Keep batch writes $\le 500$ rows per transaction with explicit individual commits. |
@@ -34,7 +34,7 @@ We use version **`0.2.2`** of the official AWS connector with SQLx **`0.9.0`**:
 ```toml
 # backend/Cargo.toml
 [workspace.dependencies]
-sqlx = { version = "0.9.0", features = ["postgres", "runtime-tokio-rustls", "macros", "migrate", "uuid", "chrono", "rust_decimal"] }
+sqlx = { version = "0.9.0", features = ["postgres", "runtime-tokio-rustls", "macros", "migrate", "uuid", "chrono", "rust_decimal", "json"] }
 aurora-dsql-sqlx-connector = { version = "0.2.2", features = ["pool", "occ"] }
 ```
 
@@ -67,8 +67,8 @@ pub async fn save_transaction_with_retry(
             INSERT INTO ledger_transactions (
                 id, family_id, recorded_by, kind, amount_value, amount_currency,
                 destination_amount_value, destination_amount_currency,
-                category_id, occurred_at, idempotency_key
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                category_id, occurred_at, idempotency_key, metadata
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             "#,
             tx_data.id,
             tx_data.family_id,
@@ -80,7 +80,8 @@ pub async fn save_transaction_with_retry(
             tx_data.destination_amount.as_ref().map(|m| m.currency.as_str()),
             tx_data.category_id,
             tx_data.occurred_at,
-            tx_data.idempotency_key
+            tx_data.idempotency_key,
+            tx_data.metadata // JSONB supported directly via serde_json::Value
         )
         .execute(&mut *tx)
         .await?;
@@ -105,7 +106,7 @@ pub async fn list_transactions_read_only(
     let rows = sqlx::query_as!(
         TransactionRow,
         r#"
-        SELECT id, family_id, kind, amount_value, amount_currency, occurred_at
+        SELECT id, family_id, kind, amount_value, amount_currency, occurred_at, metadata
         FROM ledger_transactions
         WHERE family_id = $1 AND deleted_at IS NULL
         ORDER BY occurred_at DESC, id DESC
@@ -120,4 +121,3 @@ pub async fn list_transactions_read_only(
     Ok(rows)
 }
 ```
-

@@ -135,8 +135,8 @@ aws-sdk-eventbridge = "1.40"
 aws-sdk-kinesis = "1.40"
 
 # Database & Aurora DSQL
-sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-rustls", "macros", "migrate", "uuid", "chrono", "rust_decimal"] }
-aurora-dsql-sqlx-connector = { version = "0.2", features = ["pool", "occ"] }
+sqlx = { version = "0.9.0", features = ["postgres", "runtime-tokio-rustls", "macros", "migrate", "uuid", "chrono", "rust_decimal", "json"] }
+aurora-dsql-sqlx-connector = { version = "0.2.2", features = ["pool", "occ"] }
 
 # Observability & Logging
 tracing = "0.1"
