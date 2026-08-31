@@ -1,6 +1,6 @@
 # Task 1.2 Detailed Guide — Database & Event Stream Provisioning
 
-> **Goal**: Provision the **Amazon Aurora DSQL** serverless cluster, configure **IAM database authentication**, create an **Amazon Kinesis Data Stream** for native Change Data Capture (CDC), create a custom **Amazon EventBridge Bus** for semantic domain events, and define the necessary IAM roles for Rust microservices and the migration runner.
+> **Goal**: Provision the **Amazon Aurora DSQL** serverless cluster, configure **IAM database authentication**, create an **Amazon Kinesis Data Stream** for native Change Data Capture (CDC), create a custom **Amazon EventBridge Bus** for semantic domain events, and deploy the infrastructure stack via AWS SAM.
 
 ---
 
@@ -9,7 +9,7 @@
 ```
               ┌─────────────────────────────────────────────────────────┐
               │                   Rust Microservices                    │
-              │  (family_service, ledger_service, cards_service, etc.)   │
+              │  (family_service, ledger_service, cards_service, etc.)  │
               └────────────────────────────┬────────────────────────────┘
                                            │
                            1. Read/Write (OCC + IAM Auth)
@@ -47,7 +47,7 @@
                       5. Subscriptions (Rules & Targets)
                                            │
                  ┌─────────────────────────┼─────────────────────────┐
-                 ▼                         ▼                         ▼
+                 ▼                         ▼                        ▼
         ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
         │  Budget Service │       │  Planning Engine│       │  Notifications  │
         └─────────────────┘       └─────────────────┘       └─────────────────┘
@@ -55,26 +55,54 @@
 
 ---
 
-## Prerequisites: AWS Concepts Explained
+## Prerequisites: AWS IAM Permissions for CloudFormation & SAM
 
-### 1. What is Amazon Aurora DSQL?
-**Amazon Aurora DSQL** is a serverless, distributed, active-active relational database that provides wire compatibility with PostgreSQL 16.
-* **No provisioned instances or VPC requirement**: Connects over secure HTTPS/TLS using public endpoints and AWS IAM authentication.
-* **Optimistic Concurrency Control (OCC)**: Transactions commit without blocking locks. If a concurrent write conflict occurs (SQLSTATE `40001`), the transaction rolls back and is retried.
-* **Native CDC**: Aurora DSQL can stream committed database mutations directly to an Amazon Kinesis Data Stream without external agents (e.g. Debezium) or polling.
+When AWS SAM deploys the data & streaming stack, it creates custom IAM roles (`FamilyLedgerServiceRole` and `FamilyLedgerMigrationRunnerRole`) with embedded policies for Aurora DSQL and EventBridge. 
 
-### 2. What is IAM Database Authentication for DSQL?
-Aurora DSQL does not use traditional database username/passwords. Instead:
-* Microservices obtain a short-lived signed **IAM Authentication Token** (valid for 15 minutes) using their AWS credentials (IAM role).
-* The official [`aurora-dsql-sqlx-connector`](https://crates.io/crates/aurora-dsql-sqlx-connector) crate manages token generation, auto-refresh at 80% of token lifetime, and connection pooling in Rust automatically.
+To allow CloudFormation to manage and pass these execution roles to Lambda services securely, your IAM deployer user (e.g. `programmer-user`) must have IAM management permissions conforming to AWS security best practices (scoping `iam:PassRole` with the `iam:PassedToService` condition).
 
-### 3. What is Amazon Kinesis Data Streams?
-**Amazon Kinesis Data Streams** is a real-time data streaming service.
-* In FamilyLedger, it acts as the **CDC ingestion pipe** capturing every `INSERT`, `UPDATE`, and `DELETE` committed in Aurora DSQL in strict chronological sequence per partition key (`family_id`).
+### How to Add IAM Role Permissions to Deployer User:
 
-### 4. What is Amazon EventBridge?
-**Amazon EventBridge** is a serverless event bus.
-* While Kinesis carries raw row-level database mutations (data-level), EventBridge routes high-level **Semantic Domain Events** (e.g. `FamilyMemberInvited`, `TransactionRecorded`, `BudgetLimitExceeded`) to asynchronous bounded contexts.
+1. Sign in to the **AWS Management Console** as an Administrator or Root user.
+2. Navigate to **IAM** $\rightarrow$ **Users** $\rightarrow$ select your user (`programmer-user`).
+3. Under the **Permissions** tab, click **Add permissions** $\rightarrow$ **Create inline policy**.
+4. Switch to the **JSON** editor tab and paste the following policy:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowIamRoleLifecycleManagement",
+            "Effect": "Allow",
+            "Action": [
+                "iam:CreateRole",
+                "iam:DeleteRole",
+                "iam:GetRole",
+                "iam:AttachRolePolicy",
+                "iam:DetachRolePolicy",
+                "iam:PutRolePolicy",
+                "iam:DeleteRolePolicy",
+                "iam:GetRolePolicy",
+                "iam:TagRole"
+            ],
+            "Resource": "arn:aws:iam::377161178071:role/familyledger-*"
+        },
+        {
+            "Sid": "AllowPassRoleToLambda",
+            "Effect": "Allow",
+            "Action": "iam:PassRole",
+            "Resource": "arn:aws:iam::377161178071:role/familyledger-*",
+            "Condition": {
+                "StringEquals": {
+                    "iam:PassedToService": "lambda.amazonaws.com"
+                }
+            }
+        }
+    ]
+}
+```
+5. Click **Next**, name the policy (e.g. `FamilyLedgerDeployerRoleManagementPolicy`), and click **Create policy**.
 
 ---
 
@@ -92,195 +120,66 @@ aws dsql create-cluster --region us-east-1 --tags Environment=dev,Project=Family
 **Expected output:**
 ```json
 {
-    "identifier": "ab1c2d3e4f5g6h7i8j9k0l",
-    "arn": "arn:aws:dsql:us-east-1:377161178071:cluster/ab1c2d3e4f5g6h7i8j9k0l",
+    "identifier": "4bublzlvvtnwjpmgtotwrulv7m",
+    "arn": "arn:aws:dsql:us-east-1:377161178071:cluster/4bublzlvvtnwjpmgtotwrulv7m",
     "status": "CREATING",
-    "creationTime": "2026-08-25T00:45:00Z"
+    "creationTime": "2026-08-31T14:47:01.702000+03:00"
 }
 ```
 
-> **Note**: Save your cluster `identifier` (e.g. `ab1c2d3e4f5g6h7i8j9k0l`). The PostgreSQL endpoint format is:
-> `https://<cluster-identifier>.dsql.us-east-1.on.aws:5432`
-
 ### 1.2 — Wait for Cluster Status to become `ACTIVE`
 ```powershell
-aws dsql get-cluster --identifier <your-cluster-id> --region us-east-1
+aws dsql get-cluster --identifier 4bublzlvvtnwjpmgtotwrulv7m --region us-east-1
 ```
 Ensure `"status": "ACTIVE"` before proceeding.
 
-### 1.3 — Create the Database Admin Role in DSQL
-Connect using `psql` or `aws dsql` CLI helper to initialize the `admin` and `app_user` database roles:
+---
+
+## Step 2: Review the SAM Infrastructure Template
+
+The template [`backend/infrastructure/sam/data-stream-template.yaml`](backend/infrastructure/sam/data-stream-template.yaml) provisions:
+1. **`FamilyLedgerCdcStream`**: AWS Kinesis Data Stream in `ON_DEMAND` mode with KMS encryption.
+2. **`FamilyLedgerEventBus`**: Custom EventBridge bus for domain events.
+3. **`FamilyLedgerServiceRole`**: IAM Execution Role allowing Rust Lambdas to connect to DSQL (`dsql:DbConnect`) and publish to EventBridge (`events:PutEvents`).
+4. **`FamilyLedgerMigrationRunnerRole`**: IAM Execution Role for migration execution with `dsql:DbConnectAdmin`.
+
+---
+
+## Step 3: Deploy Data & Event Infrastructure via SAM
+
+We deploy this stack as `familyledger-data-dev` with `--capabilities CAPABILITY_NAMED_IAM` so that data/event infrastructure is decoupled from API/Cognito core infrastructure.
+
+### 3.1 — Validate the Template
+Run inside `backend/infrastructure/sam/`:
 
 ```powershell
-# Generate a temporary IAM authentication token for admin connection
-aws dsql generate-db-connect-admin-auth-token --region us-east-1 --hostname <your-cluster-id>.dsql.us-east-1.on.aws
+sam validate -t data-stream-template.yaml --lint
 ```
 
-Connect and run:
-```sql
--- Grant application role access
-CREATE ROLE familyledger_app;
-GRANT ALL ON SCHEMA public TO familyledger_app;
-```
-
----
-
-## Step 2: Infrastructure as Code — Data & Event SAM Template
-
-We extend the infrastructure with a dedicated data & streaming SAM template (`backend/infrastructure/sam/data-stream-template.yaml`) or combine it with our environment configuration.
-
-### 2.1 — SAM Template: `data-stream-template.yaml`
-
-```yaml
-AWSTemplateFormatVersion: "2010-09-09"
-Transform: AWS::Serverless-2016-10-31
-
-Description: "FamilyLedger — Database Streaming, EventBridge Bus, and IAM Execution Roles"
-
-Parameters:
-  Environment:
-    Type: String
-    Default: dev
-    AllowedValues: [dev, staging, prod]
-    Description: Deployment environment name
-
-  DsqlClusterIdentifier:
-    Type: String
-    Description: Aurora DSQL Cluster Identifier (e.g. ab1c2d3e4f5g6h7i8j9k0l)
-
-Resources:
-  # ─── Kinesis Data Stream for Aurora DSQL CDC ─────────────────────────────────
-  FamilyLedgerCdcStream:
-    Type: AWS::Kinesis::Stream
-    Properties:
-      Name: !Sub "familyledger-cdc-stream-${Environment}"
-      StreamModeDetails:
-        StreamMode: ON_DEMAND
-      StreamEncryption:
-        EncryptionType: KMS
-        KeyId: alias/aws/kinesis
-
-  # ─── Custom EventBridge Event Bus ───────────────────────────────────────────
-  FamilyLedgerEventBus:
-    Type: AWS::Events::EventBus
-    Properties:
-      Name: !Sub "familyledger-events-${Environment}"
-
-  # ─── IAM Role for Rust Microservices (DSQL + EventBridge) ───────────────────
-  FamilyLedgerServiceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub "familyledger-service-role-${Environment}"
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: AuroraDSQLAccess
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Sid: "AllowDSQLDbConnect"
-                Effect: Allow
-                Action:
-                  - dsql:DbConnect
-                  - dsql:DbConnectAdmin
-                Resource:
-                  - !Sub "arn:aws:dsql:${AWS::Region}:${AWS::AccountId}:cluster/${DsqlClusterIdentifier}"
-        - PolicyName: EventBridgePublishAccess
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Sid: "AllowEventBusPutEvents"
-                Effect: Allow
-                Action:
-                  - events:PutEvents
-                Resource:
-                  - !GetAtt FamilyLedgerEventBus.Arn
-
-  # ─── IAM Role for Migration Runner Lambda ────────────────────────────────────
-  FamilyLedgerMigrationRunnerRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub "familyledger-migration-runner-role-${Environment}"
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: AuroraDSQLAdminAccess
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Sid: "AllowDSQLDbConnectAdmin"
-                Effect: Allow
-                Action:
-                  - dsql:DbConnect
-                  - dsql:DbConnectAdmin
-                Resource:
-                  - !Sub "arn:aws:dsql:${AWS::Region}:${AWS::AccountId}:cluster/${DsqlClusterIdentifier}"
-
-Outputs:
-  CdcStreamArn:
-    Value: !GetAtt FamilyLedgerCdcStream.Arn
-    Export:
-      Name: !Sub "${AWS::StackName}-CdcStreamArn"
-  CdcStreamName:
-    Value: !Ref FamilyLedgerCdcStream
-    Export:
-      Name: !Sub "${AWS::StackName}-CdcStreamName"
-  EventBusArn:
-    Value: !GetAtt FamilyLedgerEventBus.Arn
-    Export:
-      Name: !Sub "${AWS::StackName}-EventBusArn"
-  EventBusName:
-    Value: !Ref FamilyLedgerEventBus
-    Export:
-      Name: !Sub "${AWS::StackName}-EventBusName"
-  ServiceRoleArn:
-    Value: !GetAtt FamilyLedgerServiceRole.Arn
-    Export:
-      Name: !Sub "${AWS::StackName}-ServiceRoleArn"
-  MigrationRunnerRoleArn:
-    Value: !GetAtt FamilyLedgerMigrationRunnerRole.Arn
-    Export:
-      Name: !Sub "${AWS::StackName}-MigrationRunnerRoleArn"
-```
-
----
-
-## Step 3: Enable Native CDC on Aurora DSQL to Kinesis
-
-Once both the Aurora DSQL cluster and the Kinesis Stream exist, activate change data capture:
+### 3.2 — Deploy using `sam deploy`
+Run the deployment in PowerShell:
 
 ```powershell
-aws dsql update-cluster `
-  --identifier <your-cluster-id> `
-  --region us-east-1
+sam deploy `
+  --template-file data-stream-template.yaml `
+  --config-file samconfig-data.toml `
+  --capabilities CAPABILITY_NAMED_IAM
 ```
-*(Or configure the CDC destination policy granting DSQL write access to `arn:aws:kinesis:us-east-1:377161178071:stream/familyledger-cdc-stream-dev`)*.
+
+When SAM prompts:
+`Apply this changeset? [y/N]:` — type **`y`** and press Enter.
 
 ---
 
-## Step 4: Update Local Configuration (`.env.dev`)
+## Step 4: Update Local Configuration (`backend/.env.dev`)
 
-Update `backend/.env.dev` with the newly provisioned database and streaming endpoints:
+Add the newly deployed identifiers to [`backend/.env.dev`](backend/.env.dev):
 
 ```bash
 # Aurora DSQL Database
-DSQL_CLUSTER_ID=<your-cluster-id>
-DSQL_ENDPOINT=<your-cluster-id>.dsql.us-east-1.on.aws
-DATABASE_URL=postgres://admin@<your-cluster-id>.dsql.us-east-1.on.aws:5432/postgres?sslmode=require
+DSQL_CLUSTER_ID=4bublzlvvtnwjpmgtotwrulv7m
+DSQL_ENDPOINT=4bublzlvvtnwjpmgtotwrulv7m.dsql.us-east-1.on.aws
+DATABASE_URL=postgres://admin@4bublzlvvtnwjpmgtotwrulv7m.dsql.us-east-1.on.aws:5432/postgres?sslmode=require
 
 # Event Streaming & Fanout
 CDC_KINESIS_STREAM_NAME=familyledger-cdc-stream-dev
@@ -293,7 +192,7 @@ EVENT_BUS_NAME=familyledger-events-dev
 
 1. **Verify DSQL Cluster connectivity**:
    ```powershell
-   aws dsql get-cluster --identifier <your-cluster-id> --region us-east-1
+   aws dsql get-cluster --identifier 4bublzlvvtnwjpmgtotwrulv7m --region us-east-1
    ```
 2. **Verify Kinesis Stream**:
    ```powershell
@@ -303,5 +202,3 @@ EVENT_BUS_NAME=familyledger-events-dev
    ```powershell
    aws events describe-event-bus --name familyledger-events-dev --region us-east-1
    ```
-4. **Verify IAM Policy simulation**:
-   Verify that `familyledger-service-role-dev` is allowed to perform `dsql:DbConnect` and `events:PutEvents`.
