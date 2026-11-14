@@ -30,6 +30,7 @@ An **Architectural Decision Record (ADR)** is a lightweight document capturing a
 | [0015](0015-multi-currency-live-exchange-rates.md) | Multi-Currency Display with Live Exchange Rates and Dual-Amount Cross-Currency Transfers | **Accepted** | 2026-08-26 |
 | [0016](0016-pluggable-exchange-rate-providers.md) | Pluggable ExchangeRateProvider Trait with BNM and ECB Frankfurter Implementations | **Accepted** | 2026-08-26 |
 | [0017](0017-cdc-and-event-publishing-strategies.md) | Change Data Capture (CDC) and Event Publishing Strategies (Kinesis vs. EventBridge Outbox) | **Accepted** | 2026-09-05 |
+| [0018](0018-ai-native-modular-platform-and-sdui.md) | AI-Native Modular Platform Evolution, Tiered Cost Funnel, and Declarative SDUI | **Accepted** | 2026-11-14 |
 
 ---
 
