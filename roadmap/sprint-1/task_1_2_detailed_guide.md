@@ -138,8 +138,14 @@ Ensure `"status": "ACTIVE"` before proceeding.
 ## Step 2: Review the SAM Infrastructure Template
 
 The template [`backend/infrastructure/sam/data-stream-template.yaml`](backend/infrastructure/sam/data-stream-template.yaml) provisions:
-1. **`FamilyLedgerCdcStream`**: AWS Kinesis Data Stream in `ON_DEMAND` mode with KMS encryption.
-2. **`FamilyLedgerEventBus`**: Custom EventBridge bus for domain events.
+1. **`FamilyLedgerCdcStream`** *(Conditional)*: AWS Kinesis Data Stream with KMS encryption.
+   * > [!WARNING]
+     > **Cost Alert**: Kinesis charges a flat hourly fee even when completely idle!
+     > - `DeployKinesisStream="false"`: **$0.00 / month** (Recommended for Sprints 1–3).
+     > - `KinesisCapacityMode="PROVISIONED"` (1 shard): **$0.015/hour** (~$0.36/day, ~$10.80/month).
+     > - `KinesisCapacityMode="ON_DEMAND"`: **$0.040/hour** (~$0.96/day, ~$28.80/month).
+     > See [Kinesis Modes & Pricing Guide](../../architecture/kinesis-cdc-streaming.md) for full details.
+2. **`FamilyLedgerEventBus`**: Custom EventBridge bus for domain events ($0.00 when idle).
 3. **`FamilyLedgerServiceRole`**: IAM Execution Role allowing Rust Lambdas to connect to DSQL (`dsql:DbConnect`) and publish to EventBridge (`events:PutEvents`).
 4. **`FamilyLedgerMigrationRunnerRole`**: IAM Execution Role for migration execution with `dsql:DbConnectAdmin`.
 
@@ -157,13 +163,30 @@ sam validate -t data-stream-template.yaml --lint
 ```
 
 ### 3.2 — Deploy using `sam deploy`
-Run the deployment in PowerShell:
+
+#### Option A: Zero-Cost Deployment ($0.00 Idle Cost — Recommended for Sprint 1)
+Provisions the custom EventBridge bus and IAM roles without creating Kinesis:
 
 ```powershell
 sam deploy `
   --template-file data-stream-template.yaml `
   --config-file samconfig-data.toml `
   --capabilities CAPABILITY_NAMED_IAM
+```
+*(Uses the default in `samconfig-data.toml`: `DeployKinesisStream="false"`)*
+
+#### Option B: Deploy with 1 Provisioned Shard ($0.36/Day — For CDC Testing)
+```powershell
+sam deploy `
+  --template-file data-stream-template.yaml `
+  --config-file samconfig-data.toml `
+  --capabilities CAPABILITY_NAMED_IAM `
+  --parameter-overrides `
+    Environment="dev" `
+    DsqlClusterIdentifier="4bublzlvvtnwjpmgtotwrulv7m" `
+    DeployKinesisStream="true" `
+    KinesisCapacityMode="PROVISIONED" `
+    KinesisShardCount=1
 ```
 
 When SAM prompts:

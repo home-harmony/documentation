@@ -16,6 +16,7 @@ documentation/
 │   ├── system-overview.md             # Cloud architecture, AWS services & event streaming
 │   ├── aurora-dsql.md                 # Aurora DSQL constraints, OCC, IAM & migration rules
 │   ├── database-schema.md             # Complete DDL table (18) & async index (16) catalog
+│   ├── kinesis-cdc-streaming.md       # Kinesis streaming modes, pricing, and stack re-creation
 │   └── api-design.md                  # REST API routes, multi-family X-Family-Id & role permissions
 │
 ├── domain/
@@ -40,7 +41,8 @@ documentation/
 │   ├── 0013-budget-owner-approval-flow.md  # ADR 0013: Monthly Budget Owner Review & Approval
 │   ├── 0014-credit-card-explicit-loan-link.md # ADR 0014: Credit Card CDC Loan Link
 │   ├── 0015-multi-currency-live-exchange-rates.md # ADR 0015: Multi-Currency & Dual-Amount Transfers
-│   └── 0016-pluggable-exchange-rate-providers.md # ADR 0016: Pluggable FX Providers (BNM / ECB)
+│   ├── 0016-pluggable-exchange-rate-providers.md # ADR 0016: Pluggable FX Providers (BNM / ECB)
+│   └── 0017-cdc-and-event-publishing-strategies.md # ADR 0017: CDC & Event Publishing Strategies (Kinesis vs. Outbox)
 │
 ├── roadmap/
 │   ├── business-plan.md               # MVP problem, solution, multi-currency scope & cost model

@@ -29,6 +29,7 @@ An **Architectural Decision Record (ADR)** is a lightweight document capturing a
 | [0014](0014-credit-card-explicit-loan-link.md) | Credit Card PaymentAccount Explicitly Linked to Loan for Debt Planning | **Accepted** | 2026-08-26 |
 | [0015](0015-multi-currency-live-exchange-rates.md) | Multi-Currency Display with Live Exchange Rates and Dual-Amount Cross-Currency Transfers | **Accepted** | 2026-08-26 |
 | [0016](0016-pluggable-exchange-rate-providers.md) | Pluggable ExchangeRateProvider Trait with BNM and ECB Frankfurter Implementations | **Accepted** | 2026-08-26 |
+| [0017](0017-cdc-and-event-publishing-strategies.md) | Change Data Capture (CDC) and Event Publishing Strategies (Kinesis vs. EventBridge Outbox) | **Accepted** | 2026-09-05 |
 
 ---
 
