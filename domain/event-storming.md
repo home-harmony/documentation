@@ -1,6 +1,6 @@
 # Event Storming & Domain Events Catalog — FamilyLedger
 
-## 1. Domain Event Flow (Standard Ledger Transaction)
+## 1. Domain Event Flow (Direct EventBridge Publishing — ADR-0017)
 
 ```mermaid
 sequenceDiagram
@@ -8,24 +8,19 @@ sequenceDiagram
     actor User
     participant Lambda as Rust Service Lambda
     participant DSQL as Aurora DSQL
-    participant Kinesis as Kinesis CDC Stream
-    participant CDCFanout as CDC Fanout Lambda
     participant EB as EventBridge
     participant Downstream as Downstream Consumers (Budget / Notification / Plan)
 
     User->>Lambda: HTTP POST /transactions (Expense $50)
     Lambda->>DSQL: INSERT INTO ledger_transactions (OCC Tx)
     DSQL-->>Lambda: Commit Success (SQLSTATE 00000)
+    Lambda->>EB: PutEvents: TransactionRecorded
     Lambda-->>User: 201 Created
 
-    Note over DSQL,Kinesis: Asynchronous DSQL Native CDC
-    DSQL->>Kinesis: Raw CDC Row Change (op: "c")
-    Kinesis->>CDCFanout: Batch of CDC Events
-    CDCFanout->>EB: Publish Semantic Event: TransactionRecorded
-    
     par Async Fanout
-        EB->>Downstream: Budget Lambda: update envelope spent (+ $50)
-        EB->>Downstream: Notification Lambda: check budget alert threshold (> 80%)
+        EB->>Downstream: Budget Lambda: evaluate envelope alert threshold
+        EB->>Downstream: Notification Lambda: deliver alert if threshold exceeded (> 80%)
+        EB->>Downstream: Debt Planner Lambda: sync linked credit card loan balance (if applicable)
     end
 ```
 
@@ -36,14 +31,15 @@ sequenceDiagram
 | Domain Event | Originating Context | Trigger Condition | Downstream Consumers & Side-Effects |
 | :--- | :--- | :--- | :--- |
 | `FamilyCreated` | Identity & Family | User creates workspace | Seeds default ledger categories |
+| `MemberInvited` | Identity & Family | Owner creates invite token | Delivers invite link / audit log |
 | `MemberJoined` | Identity & Family | Invite accepted | Refreshes family member cache |
 | `MemberRoleChanged` | Identity & Family | Owner modifies role/permissions | Updates active authorization cache |
 | `MemberRemoved` | Identity & Family | Member soft-deleted | Revokes active sessions |
 | `AccountRegistered` | Payment Cards & Accounts | New account added | Initializes account balance tracking |
 | `AccountBalanceSnapshotted` | Payment Cards & Accounts | Month-end EventBridge Scheduler | Computes and stores closing balance in `account_balance_snapshots` |
-| `TransactionRecorded` | Ledger Core | Expense/Income/Transfer recorded | Updates budget envelope `spent`; triggers notifications |
+| `TransactionRecorded` | Ledger Core | Expense/Income/Transfer recorded | Triggers budget threshold checks & linked credit card loan sync |
 | `TransactionReversed` | Ledger Core | `POST /transactions/{id}/amend` | Reverses prior transaction effect; links new corrected entry via `amendment_of_id` |
-| `TransactionDeleted` | Ledger Core | Soft-delete transaction | Reverses envelope `spent` allocation |
+| `TransactionDeleted` | Ledger Core | Soft-delete transaction | Reverses balance/envelope impact |
 | `RecurringPaymentRegistered` | Recurring Payments | New bill/subscription added | Recalculates total committed obligations; pre-seeds draft budget envelopes |
 | `RecurringPaymentRecorded` | Recurring Payments | Bill paid | Advances `next_due_date` by frequency; links to ledger transaction |
 | `RecurringPaymentMissed` | Recurring Payments | Due date passed +1 day | Triggers push notification reminder |
@@ -51,7 +47,7 @@ sequenceDiagram
 | `LoanKindCreated` | Debt Planner | Family creates custom kind | Refreshes loan kind selection cache |
 | `LoanPaymentRecorded` | Debt Planner | Loan payment made | Reduces loan balance; checks payoff; emits to EventBridge for ledgerization |
 | `LoanPaymentLedgerized` | Ledger Core | `LoanPaymentRecorded` consumed | Inserts `loan_payment` ledger transaction; updates `debt_loan_payments.linked_transaction_id` |
-| `CreditCardSpendingUpdatedLoanBalance` | Debt Planner | CDC on `ledger_transactions` | Increments `debt_loans.balance_value` for linked credit cards (`kind != 'loan_payment'`) |
+| `CreditCardSpendingUpdatedLoanBalance` | Debt Planner | `TransactionRecorded` on linked credit card | Increments `debt_loans.balance_value` for linked credit cards (`kind != 'loan_payment'`) |
 | `LoanPaidOff` | Debt Planner | Loan balance reaches 0 | Regenerates plan, rolls freed payment to next debt; notifies Owner to review linked insurance |
 | `BudgetDraftCreated` | Budget & Limits | 1st of month Scheduler | Creates `MonthlyBudget` in `Draft` status; delivers push notification to Owner |
 | `BudgetApproved` | Budget & Limits | Owner approves draft budget | Transitions status to `Active`; locks envelope limits |
@@ -62,12 +58,12 @@ sequenceDiagram
 
 ---
 
-## 3. CDC Fanout & Idempotency Rules
+## 3. EventBridge Delivery & Idempotency Rules
 
-1. **At-Least-Once Delivery**: Kinesis Data Streams and EventBridge deliver events with at-least-once semantics.
-2. **Deduplication Key**: All CDC consumers must deduplicate events using `txId + table + PK`.
-3. **Soft-Delete Payload Preservation**: Because hard deletes in DSQL CDC omit the deleted row's prior state, business entities MUST be soft-deleted (`deleted_at TIMESTAMPTZ`) to retain full context in CDC events.
-4. **CDC Exclusion for Loan Payments**: CDC handlers syncing credit card loan balances must ignore `ledger_transactions` with `kind IN ('loan_payment', 'reversal')` to prevent double-decrementing or looping balance updates.
+1. **At-Least-Once Delivery**: EventBridge delivers events with at-least-once semantics.
+2. **Idempotent Consumers**: All downstream consumers must handle duplicate event delivery safely using unique entity `idempotency_key` constraints or deterministic deduplication keys (`event_id` / `payment_id` / `transaction_id`).
+3. **Soft-Delete Payload Preservation**: Business entities MUST be soft-deleted (`deleted_at TIMESTAMPTZ`) rather than physically erased so downstream consumers and audit trails always retain full historical context.
+4. **Loan Payment Filtering**: Event handlers syncing credit card loan balances must ignore `TransactionRecorded` events where `kind IN ('loan_payment', 'reversal')` to prevent double-decrementing or looping balance updates.
 
 ---
 

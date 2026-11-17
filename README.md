@@ -13,11 +13,12 @@ documentation/
 ├── README.md                          # Engineering index
 ├── README.ru.md                       # Описание для всей семьи простыми словами (Russian)
 ├── architecture/
-│   ├── system-overview.md             # Cloud architecture, AWS services & event streaming
+│   ├── system-overview.md             # Cloud architecture, AWS services & EventBridge domain events
 │   ├── aurora-dsql.md                 # Aurora DSQL constraints, OCC, IAM & migration rules
 │   ├── database-schema.md             # Complete DDL table (18) & async index (16) catalog
-│   ├── kinesis-cdc-streaming.md       # Kinesis streaming modes, pricing, and stack re-creation
-│   └── api-design.md                  # REST API routes, multi-family X-Family-Id & role permissions
+│   ├── kinesis-cdc-streaming.md       # Event publishing analysis & Kinesis removal rationale (ADR-0017)
+│   ├── api-design.md                  # REST API routes, multi-family X-Family-Id & role permissions
+│   └── ai-native-platform-rethinking.md # Phased AI-native & SDUI architecture specification
 │
 ├── domain/
 │   ├── bounded-contexts.md            # The 9 bounded contexts & aggregate root models
@@ -25,7 +26,7 @@ documentation/
 │   └── ubiquitous-language.md         # Domain glossary, invariants & True Disposable Surplus formulas
 │
 ├── decisions/                         # Architectural Decision Records (ADRs)
-│   ├── README.md                      # ADR index (0001–0016) & MADR template
+│   ├── README.md                      # ADR index (0001–0018) & MADR template
 │   ├── 0001-aurora-dsql-serverless-db.md   # ADR 0001: Amazon Aurora DSQL
 │   ├── 0002-keyset-pagination.md           # ADR 0002: Keyset Cursor Pagination
 │   ├── 0003-rust-ddd-clean-architecture.md # ADR 0003: Clean Architecture / DDD in Rust
@@ -42,7 +43,8 @@ documentation/
 │   ├── 0014-credit-card-explicit-loan-link.md # ADR 0014: Credit Card CDC Loan Link
 │   ├── 0015-multi-currency-live-exchange-rates.md # ADR 0015: Multi-Currency & Dual-Amount Transfers
 │   ├── 0016-pluggable-exchange-rate-providers.md # ADR 0016: Pluggable FX Providers (BNM / ECB)
-│   └── 0017-cdc-and-event-publishing-strategies.md # ADR 0017: CDC & Event Publishing Strategies (Kinesis vs. Outbox)
+│   ├── 0017-cdc-and-event-publishing-strategies.md # ADR 0017: Event Publishing Strategy (Direct EventBridge)
+│   └── 0018-ai-native-modular-platform-and-sdui.md # ADR 0018: AI-Native Modular Platform & SDUI
 │
 ├── roadmap/
 │   ├── business-plan.md               # MVP problem, solution, multi-currency scope & cost model
@@ -50,8 +52,9 @@ documentation/
 │   └── sprint-1/
 │       ├── sprint_1_plan.md           # Sprint 1 detailed execution plan (34 migrations)
 │       ├── task_1_1_detailed_guide.md # Task 1.1 AWS SAM / CloudFormation guide
-│       ├── task_1_2_detailed_guide.md # Task 1.2 Database & Streaming guide
-│       └── task_2_1_detailed_guide.md # Task 2.1 Rust Multi-Crate Workspace guide
+│       ├── task_1_2_detailed_guide.md # Task 1.2 Database & EventBridge guide
+│       ├── task_2_1_detailed_guide.md # Task 2.1 Rust Multi-Crate Workspace guide
+│       └── task_3_1_detailed_guide.md # Task 3.1 Aurora DSQL Migration Files guide
 │
 └── testing/
     └── testing-strategy.md            # Test pyramid: Unit, Testcontainers PG, Axum, E2E

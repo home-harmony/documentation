@@ -1,7 +1,7 @@
 # FamilyLedger — Sprint 1 Execution Plan (Infrastructure & Foundation)
 
 ## Sprint 1 Goal
-Establish the core serverless cloud infrastructure on AWS, initialize the Rust multi-crate workspace (`backend/`), configure the Amazon Aurora DSQL database cluster, set up the CDC (Change Data Capture) fanout stream, implement the Database Migration Runner Lambda, and deploy the initial schema migrations (18 tables and 16 asynchronous indexes).
+Establish the core serverless cloud infrastructure on AWS, initialize the Rust multi-crate workspace (`backend/`), configure the Amazon Aurora DSQL database cluster, set up the EventBridge domain event bus (`$0.00` idle cost), implement the Database Migration Runner Lambda, and deploy the initial schema migrations (18 tables and 16 asynchronous indexes).
 
 **Duration**: 2 Weeks (10 Working Days)
 
@@ -16,9 +16,7 @@ graph TD
         APIGW -->|Proxy Requests with X-Family-Id| ServiceLambda[Rust microservice Lambdas]
         
         ServiceLambda -->|Read/Write OCC| DSQL[Amazon Aurora DSQL]
-        DSQL -->|Native CDC| Kinesis[Kinesis Data Stream]
-        Kinesis -->|Trigger| CDCFanout[CDC Fanout Lambda]
-        CDCFanout -->|Semantic Events| EventBridge[AWS EventBridge]
+        ServiceLambda -->|Publish Domain Events| EventBridge[AWS EventBridge Bus]
         
         StaticHosting[S3 Bucket + CloudFront CDN] -->|Serves SPA| WebBrowser[Angular SPA Client]
         
@@ -32,24 +30,24 @@ graph TD
 
 ### Phase 1: AWS Serverless Infrastructure Provisioning (Days 1–3)
 
-#### Task 1.1: IAM & CloudFormation/SAM Template Setup — ✅ COMPLETED
+#### Task 1.1: IAM & CloudFormation/SAM Template Setup — ✅ COMPLETED (Recreate stack cleanly for ADR-0011)
 * **Objective**: Create the Infrastructure-as-Code (IaC) templates (AWS SAM / CloudFormation) to model the environment cleanly.
 * **Details**:
-  * Define AWS Cognito User Pool, Cognito App Client, and OAuth scopes (identity only; tenant context passed via `X-Family-Id`, ADR-0011).
-  * Define API Gateway HTTP API with a JWT Authorizer pointing to the Cognito User Pool.
+  * Define AWS Cognito User Pool (identity only; no legacy `family_id`/`family_role` custom schema attributes — tenant context is passed via `X-Family-Id`, ADR-0011), Cognito App Client, and OAuth scopes.
+  * Define API Gateway HTTP API with a JWT Authorizer pointing to the Cognito User Pool and CORS `AllowHeaders` including `X-Family-Id`.
   * Define S3 Bucket for Angular static hosting, configured for private access with CloudFront Origin Access Control (OAC).
-  * Configure CloudFront Distribution to serve files from the S3 bucket with SPA routing fallbacks (routing 404s back to `index.html`).
-  * See [Task 1.1 Detailed Guide](task_1_1_detailed_guide.md) for full CloudFormation template and steps.
-* **Status**: Stack `familyledger-core-dev` deployed successfully (`CREATE_COMPLETE`).
+  * Configure CloudFront Distribution to serve files from the S3 bucket with SPA routing fallbacks (routing 403/404s back to `index.html`).
+  * See [Task 1.1 Detailed Guide](task_1_1_detailed_guide.md) for full CloudFormation template and `sam delete` + `sam deploy` steps.
+* **Status**: Template updated cleanly for ADR-0011 (Variant 2); recreate `familyledger-core-dev` via `sam delete` + `sam deploy` on next AWS deploy.
 
-#### Task 1.2: Database & Event Stream Provisioning — ✅ COMPLETED
-* **Objective**: Set up Aurora DSQL serverless instance and hook up Change Data Capture (CDC) pipeline.
+#### Task 1.2: Database & Event Bus Provisioning — ✅ COMPLETED
+* **Objective**: Set up Aurora DSQL serverless instance, custom EventBridge event bus, and least-privilege IAM execution roles.
 * **Details**:
   * Provision an Amazon Aurora DSQL Cluster (`4bublzlvvtnwjpmgtotwrulv7m`). Establish endpoint configurations.
-  * Provision Amazon Kinesis Data Stream (`familyledger-cdc-stream-dev`, on-demand mode) and EventBridge Bus (`familyledger-events-dev`).
-  * Configure IAM Roles allowing the microservices (`FamilyLedgerServiceRole`) and migration runner (`FamilyLedgerMigrationRunnerRole`) to log in to DSQL via IAM authentication tokens.
+  * Provision custom EventBridge Bus (`familyledger-events-dev`). Amazon Kinesis Data Stream is disabled/removed per ADR-0017 due to fixed idle hourly cost; Rust services publish domain events directly to EventBridge (`$0.00` idle cost).
+  * Configure least-privilege IAM Roles allowing microservices (`FamilyLedgerServiceRole`: `dsql:DbConnect` + `events:PutEvents`) and the migration runner (`FamilyLedgerMigrationRunnerRole`: `dsql:DbConnect` + `dsql:DbConnectAdmin`) to authenticate to DSQL via IAM tokens.
   * See [Task 1.2 Detailed Guide](task_1_2_detailed_guide.md) for full deployment steps and IAM configurations.
-* **Status**: Stack `familyledger-data-dev` deployed successfully (`CREATE_COMPLETE`).
+* **Status**: Stack `familyledger-data-dev` updated cleanly in `data-stream-template.yaml` (re-deploy with `sam deploy --config-file samconfig-data.toml`).
 
 ---
 
@@ -60,14 +58,14 @@ graph TD
 * **Structure created**:
   ```
   backend/
-  ├── Cargo.toml                  # Workspace definition with sqlx 0.9.0 & aurora-dsql-sqlx-connector 0.2.2
+  ├── Cargo.toml                  # Workspace definition with latest pinned dependencies
   ├── domain/                     # Pure domain logic crate (Zero I/O)
   │   ├── Cargo.toml
   │   └── src/lib.rs
   ├── infrastructure/             # DB & External integration adapters
   │   ├── Cargo.toml
   │   └── src/lib.rs
-  ├── api/                        # Shared Axum middlewares & responses
+  ├── api/                        # Shared Axum extractors & responses
   │   ├── Cargo.toml
   │   └── src/lib.rs
   └── lambdas/                    # Binary targets compiled for AWS Lambda
@@ -76,16 +74,17 @@ graph TD
           └── src/main.rs
   ```
 * See [Task 2.1 Detailed Guide](task_2_1_detailed_guide.md) for step-by-step instructions.
-* **Status**: Verified with `cargo check`, `cargo clippy`, `cargo fmt`, and 46 unit tests passing.
+* **Status**: Verified with `cargo check`, `cargo clippy -- -D warnings`, `cargo fmt --check`, 58 unit tests, and 6 doctests passing.
 
 #### Task 2.2: Add Workspace Dependencies — ✅ COMPLETED
 * **Objective**: Set up base dependencies in workspace crates to enforce consistent versioning.
 * **Core dependencies**:
   * `sqlx` (v0.9.0) with `postgres`, `runtime-tokio`, `tls-rustls-ring`, `macros`, `migrate`, `uuid`, `chrono`, `rust_decimal`, `json`.
   * `aurora-dsql-sqlx-connector` (v0.2.2) for automatic IAM auth refresh and OCC retry logic.
-  * `tokio` (v1) with full features.
-  * `rust_decimal` (v1) with `serde-with-str` for float-free currency calculations.
-  * `uuid` (v1) with `v4`, `v7`, and `serde` features.
+  * `tokio` (v1.54.1) with full features.
+  * `rust_decimal` (v1.43.0) with `serde-with-str` for float-free currency calculations.
+  * `uuid` (v1.29.3) with `v4`, `v7`, and `serde` features.
+  * `axum` (v0.8.9), `lambda_runtime` (v1.5.0), `lambda_http` (v1.3.2), `tower-http` (v0.7.1), `jsonwebtoken` (v12.0.0), `nutype` (v0.8.0).
 
 ---
 
@@ -150,9 +149,11 @@ backend/migrations/
 * **Objective**: Write a Lambda binary using `lambda_runtime` that connects to Aurora DSQL and runs `sqlx::migrate!()` to apply embedded SQL migrations at runtime.
 * **Code Implementation (`backend/lambdas/migrate_runner/src/main.rs`)**:
 ```rust
-use lambda_runtime::{run, service_fn, Error, LambdaEvent};
+use anyhow::Context;
+use infrastructure::db::pool::create_pool;
+use lambda_runtime::{Error, LambdaEvent, run, service_fn};
 use serde::{Deserialize, Serialize};
-use aurora_dsql_sqlx_connector::pool;
+use tracing::info;
 
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
 
@@ -162,30 +163,19 @@ struct Request {}
 #[derive(Serialize)]
 struct Response {
     message: String,
-    applied_count: usize,
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Error> {
-    run(service_fn(handler)).await
+    total_migrations: usize,
 }
 
 async fn handler(_event: LambdaEvent<Request>) -> Result<Response, Error> {
-    let dsql_endpoint = std::env::var("DSQL_ENDPOINT")
-        .map_err(|_| Error::from("DSQL_ENDPOINT env variable is missing"))?;
-        
-    println!("Connecting to Aurora DSQL...");
-    let pool = pool::connect(&dsql_endpoint).await?;
-    
-    println!("Running migrations...");
-    MIGRATOR.run(&pool).await?;
-    
-    let applied = MIGRATOR.iter().count();
-    println!("Success. Applied {} migrations.", applied);
+    let pg_pool = create_pool().await?;
 
+    info!("Running schema migrations");
+    MIGRATOR.run(&pg_pool).await.context("Migration run failed")?;
+
+    let total_migrations = MIGRATOR.iter().count();
     Ok(Response {
-        message: "Migrations executed successfully".to_string(),
-        applied_count: applied,
+        message: "Schema migrations completed successfully".to_string(),
+        total_migrations,
     })
 }
 ```
@@ -215,9 +205,9 @@ async fn handler(_event: LambdaEvent<Request>) -> Result<Response, Error> {
 ---
 
 ## Sprint 1 Definition of Done (DoD)
-- [x] AWS infrastructure components (Cognito, API Gateway, S3, CloudFront, Aurora DSQL) are successfully provisioned.
-- [x] Kinesis stream and EventBridge bus are active.
-- [x] Rust Cargo workspace compiles cleanly with zero warnings/errors (`cargo check`, `cargo clippy`, `cargo fmt`).
+- [x] AWS infrastructure templates (Cognito, API Gateway, S3, CloudFront, Aurora DSQL, EventBridge, IAM) are defined and verified (re-run `sam delete` + `sam deploy` for `familyledger-core-dev` and `sam deploy` for `familyledger-data-dev` on next AWS deploy).
+- [x] EventBridge bus and least-privilege IAM roles are configured (`$0.00` idle cost; Kinesis disabled/removed per ADR-0017).
+- [x] Rust Cargo workspace compiles cleanly with zero warnings/errors (`cargo check`, `cargo clippy -- -D warnings`, `cargo fmt --check`).
 - [ ] Local database migration checks run successfully against PostgreSQL.
 - [ ] The Migration Runner Lambda compiles, deploys, and executes successfully on AWS.
 - [ ] Database contains all **18 schema tables** and **16 asynchronous indexes** (34 migrations total) verified via active schema checks.

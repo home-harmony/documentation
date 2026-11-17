@@ -29,10 +29,10 @@ User identity mapping from AWS Cognito `sub`, family workspace aggregate root, a
 *Note: A single user may belong to multiple families. `family_id` for a request comes from the `X-Family-Id` request header (validated by middleware), not from a JWT claim.*
 
 ### Aggregates & Entities
-- **`Family` (Aggregate Root)**: `id: FamilyId`, `name: String`, `home_currency: CurrencyCode`, `members: Vec<FamilyMember>`, `created_at: DateTime<Utc>`
-- **`FamilyMember`**: `id: MemberId`, `user_id: UserId`, `display_name: String`, `role: Role`, `permissions: Option<Vec<Permission>>`, `relationship: Option<String>`, `joined_at: DateTime<Utc>`
-  - *Note: `permissions` is only relevant when `role = Other`. NULL means standard Member-equivalent permissions.*
-- **`InviteToken`**: `token: String`, `family_id: FamilyId`, `role: Role`, `permissions: Option<Vec<Permission>>`, `expires_at: DateTime<Utc>`, `used: bool`
+- **`Family` (Aggregate Root)**: `id: FamilyId`, `name: FamilyName`, `home_currency: CurrencyCode`, `members: Vec<FamilyMember>`, `invite_tokens: Vec<InviteToken>`, `created_at: DateTime<Utc>`, `deleted_at: Option<DateTime<Utc>>`
+- **`FamilyMember`**: `id: MemberId`, `family_id: FamilyId`, `user_id: UserId`, `display_name: DisplayName`, `role: Role`, `permissions: Vec<Permission>`, `relationship: Option<String>`, `joined_at: DateTime<Utc>`, `deleted_at: Option<DateTime<Utc>>`
+  - *Note: `permissions` is only relevant when `role = Other` (empty `[]` for predefined roles, whose permissions are derived directly from `Role`).*
+- **`InviteToken`**: `token: InviteTokenId`, `family_id: FamilyId`, `role: Role`, `permissions: Vec<Permission>`, `relationship: Option<String>`, `created_by: MemberId`, `created_at: DateTime<Utc>`, `expires_at: DateTime<Utc>`, `used: bool`
 
 ### Permissions & Roles
 Permission flags (only applicable to `Role::Other` members):
@@ -126,7 +126,7 @@ Active loan registry and automated repayment plan generation (Avalanche vs. Snow
   - `monthly_payment: Money` (minimum payment)
   - `next_payment_date: NaiveDate`
   - `status: LoanStatus` (`Active`, `PaidOff`, `Paused`)
-  - `linked_account_id: Option<AccountId>` -- When set (and account kind is CreditCard), spending on that account auto-increments this loan's balance via CDC. See ADR-0014.
+  - `linked_account_id: Option<AccountId>` -- When set (and account kind is CreditCard), spending on that account auto-increments this loan's balance via EventBridge (`TransactionRecorded`). See ADR-0014.
 - **`LoanPayment` (Child Entity of Loan)**:
   - `id: LoanPaymentId`
   - `loan_id: LoanId`
@@ -190,7 +190,7 @@ Monthly spending envelopes. Automatically pre-seeded with committed recurring ob
 ### Aggregates & Entities
 - **`MonthlyBudget` (Aggregate Root)**:
   - `id: BudgetId`, `family_id: FamilyId`, `year_month: YearMonth`
-  - `status: BudgetStatus` (`Draft`, `Active`, `Closed`)
+  - `status: BudgetStatus` (`Draft`, `Active`)
   - `total_income_expected: Money`
   - `total_committed: Money` (sum of active recurring obligations)
   - `total_discretionary_limit: Money`
@@ -198,18 +198,15 @@ Monthly spending envelopes. Automatically pre-seeded with committed recurring ob
   - `approved_by: Option<MemberId>`
   - `approved_at: Option<DateTime<Utc>>`
 - **`BudgetEnvelope` (Child Entity)**:
-  - `id: Uuid`, `category_id: CategoryId`
-  - `kind: EnvelopeKind` (`Committed`, `Discretionary`)
-  - `limit: Money`, `spent: Money`
-  - `alert_at_percent: u8`, `alerted: bool`
-  - `deleted_at: Option<DateTime<Utc>>`
+  - `id: BudgetEnvelopeId`, `budget_id: BudgetId`, `category_id: CategoryId`
+  - `limit_amount: Money`, `order_index: i16`, `alert_threshold: i16`
+  - *Note: `spent` is computed dynamically via `SUM(ledger_transactions)` at read time (no stored `spent_value` column) to avoid OCC hot rows and handle amendments accurately.*
 
 *Lifecycle Flow Note:*
 1. EventBridge Scheduler fires on 1st of month → `BudgetDraftCreated` → `budget_service` creates MonthlyBudget(status=Draft)
 2. Recurring payments auto-seed Committed envelopes
 3. Owner reviews, adjusts discretionary limits
-4. Owner approves → `BudgetApproved` → status=Active, envelopes locked
-5. End of month → status=Closed
+4. Owner approves → `BudgetApproved` → status=Active, envelopes locked (historical months remain `Active` for read-only reporting)
 
 ---
 

@@ -169,13 +169,6 @@ Resources:
         EmailMessage: "Your verification code is {####}"
       UserPoolAddOns:
         AdvancedSecurityMode: AUDIT
-      Schema:
-        - Name: family_id
-          AttributeDataType: String
-          Mutable: true
-        - Name: family_role
-          AttributeDataType: String
-          Mutable: true
 
   # ─── Cognito App Client ─────────────────────────────────────────────────────
   FamilyLedgerWebAppClient:
@@ -217,7 +210,7 @@ Resources:
         AllowOrigins:
           - "http://localhost:4200"
           - !Sub "https://${FamilyLedgerCdn.DomainName}"
-        AllowHeaders: [Content-Type, Authorization, X-Amz-Date, X-Api-Key]
+        AllowHeaders: [Content-Type, Authorization, X-Amz-Date, X-Api-Key, X-Family-Id]
         AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
         MaxAge: 300
       Auth:
@@ -328,18 +321,25 @@ Outputs:
 
 ---
 
-## Step 4: Deploying with SAM
+### Step 4: Deploying (or Recreating) with SAM
 
 ```powershell
 cd backend/infrastructure/sam
 sam deploy --guided
 ```
 
-Verify deployment outputs and connect Cognito and API Gateway URLs into your application configurations.
+> [!NOTE]
+> **Recreating `familyledger-core-dev` cleanly (ADR-0011)**: Amazon Cognito does not allow removing custom `Schema` attributes (`family_id`, `family_role`) in-place via CloudFormation update. If updating an existing stack that had those legacy attributes, recreate it cleanly:
+> ```powershell
+> sam delete --stack-name familyledger-core-dev --region us-east-1 --no-prompts
+> sam deploy --config-file samconfig.toml
+> ```
+
+Verify deployment outputs and connect Cognito and API Gateway URLs into your application configurations (`backend/.env.dev`).
 
 ---
 
-### Task is complete
+### Task Reference Architecture (`familyledger-core-dev`)
 
 What These 2 Stacks Are:
 
@@ -348,10 +348,11 @@ What These 2 Stacks Are:
    * **What it does**: Holds packaged CloudFormation templates and deployment artifacts before they are deployed to your application stacks.
 
 2. **`familyledger-core-dev`** (Your Core Application Stack)
-   * **All 9 Resources `CREATE_COMPLETE`**:
-     * **API Gateway (`lqnz5cqujj`) & Stage (`dev`)**: HTTP API endpoint with Cognito JWT Authorizer.
-     * **Cognito User Pool (`us-east-1_QOTPpUl2F`)**: User directory with custom claims (`family_id`, `family_role`).
-     * **Cognito App Client (`4l19jr5ejol71i5nkeo1kct3af`)**: OAuth2 client for SPA authentication.
-     * **Cognito Hosted UI Domain (`familyledger-dev-377161178071`)**: Custom prefix for authentication flows.
-     * **S3 SPA Bucket (`familyledger-spa-dev-377161178071`) & Policy**: Encrypted, private static storage.
-     * 
+   * **All 9 Resources (`CREATE_COMPLETE`)**:
+     * **API Gateway (`FamilyLedgerApi`) & Stage (`dev`)**: HTTP API endpoint with Cognito JWT Authorizer and `X-Family-Id` CORS support.
+     * **Cognito User Pool (`FamilyLedgerUserPool`)**: Identity-only user directory (`sub`, `email`); multi-family workspace context comes from `X-Family-Id` (ADR-0011).
+     * **Cognito App Client (`FamilyLedgerWebAppClient`)**: OAuth2 client for SPA authentication.
+     * **Cognito Hosted UI Domain (`FamilyLedgerUserPoolDomain`)**: Custom prefix for authentication flows.
+     * **S3 SPA Bucket (`FamilyLedgerSpaBucket`) & Bucket Policy (`FamilyLedgerSpaBucketPolicy`)**: Encrypted, private static storage.
+     * **CloudFront Origin Access Control (`FamilyLedgerCdnOac`)**: SigV4 OAC allowing CloudFront to read from the private S3 bucket.
+     * **CloudFront Distribution (`FamilyLedgerCdn`)**: Global HTTPS CDN with SPA 403/404 fallback to `/index.html`.

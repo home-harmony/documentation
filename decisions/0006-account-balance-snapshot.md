@@ -51,7 +51,7 @@ CREATE TABLE account_balance_snapshots (
 ```
 current_balance
   = latest_snapshot.closing_balance
-  + SUM(ledger_transactions WHERE account_id = ? AND recorded_at > snapshot.year_month)
+  + SUM(ledger_transactions WHERE account_id = ? AND occurred_at > snapshot_end_of_month AND deleted_at IS NULL)
 ```
 
 For accounts with no snapshot yet, fall back to summing the full ledger.
@@ -73,5 +73,5 @@ For accounts with no snapshot yet, fall back to summing the full ledger.
 
 * The `payment_accounts` table **must not** contain a `current_balance` column.
 * All balance reads in the API layer **must** route through the ledger-derivation formula described above; direct balance fields on the account row are prohibited.
-* The CDC Lambda **must** trigger the snapshot computation at month-end for every active account.
+* `EventBridge Scheduler` **must** trigger the `accounts_service` snapshot computation at month-end for every active account.
 * The snapshot row is immutable after creation; re-computation for the same `(account_id, year_month)` must upsert using the `UNIQUE` constraint, not create a duplicate.

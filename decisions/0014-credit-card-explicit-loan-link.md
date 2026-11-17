@@ -24,11 +24,11 @@ Automatically treating every `CreditCard` account as a loan would pollute the de
 
 1. **Disconnected Manual Entries** — user creates a `PaymentAccount` and a separate unlinked `Loan`. (Rejected: balances drift immediately upon new purchases or payments).
 2. **Implicit Auto-Linking for All Cards** — every credit card account automatically surfaces as a loan. (Rejected: confuses users who pay full balances monthly and do not have revolving debt).
-3. **Explicit Linkage with CDC-Driven Balance Sync (Option C)** — user creates a `Loan` with `kind = 'credit_card'` and explicitly populates `linked_account_id` referencing the corresponding `PaymentAccount`. Spending on the card automatically synchronizes to the loan balance via Aurora DSQL CDC. (Chosen).
+3. **Explicit Linkage with Event-Driven Balance Sync (Option C)** — user creates a `Loan` with `loan_kind_id` (`credit_card`) and explicitly populates `linked_account_id` referencing the corresponding `PaymentAccount`. Spending on the card publishes `TransactionRecorded` to EventBridge, which synchronizes the loan balance asynchronously (ADR-0017). (Chosen).
 
 ## Decision Outcome
 
-Chosen option: **Option 3 — Explicit Linkage with CDC-Driven Balance Sync**.
+Chosen option: **Option 3 — Explicit Linkage with Event-Driven Balance Sync**.
 
 ### Architecture and Data Flow
 
@@ -38,24 +38,19 @@ Chosen option: **Option 3 — Explicit Linkage with CDC-Driven Balance Sync**.
        ▼
 ┌──────────────────────────────────────────────────────────┐
 │ ledger_service                                           │
-│  INSERT ledger_transactions                              │
-│  (kind='expense', source_account_id=card_account_id)     │
+│  1. INSERT ledger_transactions                           │
+│     (kind='expense', source_account_id=card_account_id)  │
+│  2. Publish TransactionRecorded to EventBridge           │
 └──────────────────────────────┬───────────────────────────┘
                                │
-                               ▼ Aurora DSQL Native CDC
-┌──────────────────────────────────────────────────────────┐
-│ CDC Fanout Lambda                                        │
-│  1. Detects transaction on source_account_id             │
-│  2. Checks if kind != 'loan_payment' AND kind != 'reversal'
-│  3. Publishes: CreditCardSpendingUpdatedLoanBalance      │
-└──────────────────────────────┬───────────────────────────┘
-                               │
-                               ▼ EventBridge
+                               ▼ EventBridge (Direct Publish, ADR-0017)
 ┌──────────────────────────────────────────────────────────┐
 │ debt_planner_service                                     │
-│  UPDATE debt_loans                                       │
-│  SET balance_value = balance_value + event.amount        │
-│  WHERE linked_account_id = event.source_account_id       │
+│  1. Filters TransactionRecorded:                         │
+│     kind NOT IN ('loan_payment', 'reversal')             │
+│  2. UPDATE debt_loans                                    │
+│     SET balance_value = balance_value + event.amount     │
+│     WHERE linked_account_id = event.source_account_id    │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -65,19 +60,19 @@ When a debt repayment is made toward the credit card:
 1. User records payment via `POST /loans/{id}/payments`.
 2. `debt_planner_service` records `LoanPayment` and reduces `debt_loans.balance_value` by `principal_portion`.
 3. Event `LoanPaymentRecorded` triggers `ledger_service` to insert a `loan_payment` transaction into the ledger (see ADR-0009).
-4. The CDC Fanout Lambda **filters out** transactions of `kind = 'loan_payment'` to prevent double-decrementing or looping the balance update.
+4. `ledger_service` / `debt_planner_service` **filters out** transactions of `kind IN ('loan_payment', 'reversal')` to prevent double-decrementing or looping the balance update.
 
 ### Positive Consequences
 
 * Balances remain 100% consistent across spending tracking and debt payoff planning.
 * Full flexibility: full-pay cardholders do not link their accounts; revolving debt holders link their cards and benefit from Avalanche/Snowball calculations.
-* Leverages existing `linked_account_id UUID` column on `debt_loans`.
+* Leverages existing `linked_account_id UUID` column on `debt_loans` with `$0.00` idle EventBridge cost.
 
 ### Negative Consequences / Trade-offs
 
-* Asynchronous balance propagation means the debt planner reflects new card charges within ~1-2 seconds (eventual consistency).
+* Asynchronous balance propagation means the debt planner reflects new card charges shortly after commit (eventual consistency).
 
 ## Compliance & Invariants
 
 * Linking a `Loan` to a `PaymentAccount` **requires** that the account `kind == 'credit_card'` and that account and loan currencies match.
-* The CDC fanout pipeline **must filter out** `ledger_transactions` with `kind IN ('loan_payment', 'reversal')` when emitting balance synchronization events for linked credit cards.
+* Credit card loan balance synchronization **must filter out** `ledger_transactions` with `kind IN ('loan_payment', 'reversal')`.

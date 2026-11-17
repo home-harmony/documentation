@@ -40,16 +40,12 @@ Furthermore, Aurora DSQL does not support PostgreSQL triggers, logical replicati
 
 ## Decision Outcome
 
-Chosen option: **Hybrid Multi-Stage Strategy (Options 1, 2, and 3 based on lifecycle phase)**.
+Chosen option: **Option 2 — Direct Domain Event Publishing to Amazon EventBridge** (with **Amazon Kinesis Data Stream completely disabled/removed** from SAM templates due to fixed hourly idle cost; **Option 3 — Transactional Outbox** remains the designated future upgrade path if atomic DB-to-EventBridge guarantees are later required at `$0.00` idle cost).
 
-### Phase Allocation:
-1. **Sprints 1–3 & Local Development**: **Option 2 (Direct Domain Event Publishing)** with `DeployKinesisStream="false"`.
-   * *Rationale*: The SAM stack deploys only the custom EventBridge bus and IAM execution roles. The entire infrastructure costs **$0.00 / month** when idle.
-2. **Sprint 4 (CDC Fanout Testing)**: **Option 1 with Provisioned Mode (1 Shard)** or **LocalStack**.
-   * *Rationale*: Tests real Kinesis API compatibility while cutting base hourly costs by 63% ($0.015/hr vs $0.04/hr) compared to On-Demand.
-3. **Production Deployment**:
-   * **Family / Self-Hosted Scale**: **Option 2 (Direct EventBridge)** or **Option 3 (Transactional Outbox)** to maintain true pay-per-request pricing ($0 base cost).
-   * **High-Throughput Commercial Tier**: **Option 1 (Native DSQL CDC with Kinesis On-Demand)** for automated scaling, storage-level audit logging, and hands-off shard management.
+### Active Architecture Details:
+1. **SAM Infrastructure (`data-stream-template.yaml`)**: Provisions only the custom EventBridge bus (`familyledger-events-{env}`) and least-privilege IAM execution roles. **Kinesis is removed**, keeping infrastructure idle cost at **$0.00 / month**.
+2. **Application Publishing**: Rust microservice Lambdas execute atomic writes against Aurora DSQL, then immediately publish the typed `Vec<DomainEvent>` returned by aggregate methods to EventBridge via `events:PutEvents` (< 25 ms delivery).
+3. **Future Upgrade Path**: If strict at-least-once transactional guarantees are needed later without paying Kinesis hourly fees, add an `outbox_events` table (Option 3) while keeping EventBridge consumers unchanged.
 
 ---
 
@@ -75,7 +71,7 @@ Chosen option: **Hybrid Multi-Stage Strategy (Options 1, 2, and 3 based on lifec
 
 ## Compliance & Invariants
 
-1. `backend/infrastructure/sam/data-stream-template.yaml` must maintain `DeployKinesisStream="false"` as the default for dev environments.
-2. All domain aggregates in `domain/` must continue returning `Vec<DomainEvent>` from mutating methods to support direct EventBridge publishing and outbox storage.
-3. If Kinesis CDC is enabled, consumer Lambdas must deduplicate events using `txId + table + PK` as the idempotency key (Rule #8).
+1. `backend/infrastructure/sam/data-stream-template.yaml` must not provision any Amazon Kinesis Data Stream resources (keeping `$0.00` idle event-bus cost).
+2. All domain aggregates in `domain/` must continue returning `Vec<DomainEvent>` from mutating methods to support direct EventBridge publishing (and potential future outbox storage).
+3. Downstream EventBridge consumers must enforce idempotent processing using deterministic event/entity identifiers (`idempotency_key`).
 

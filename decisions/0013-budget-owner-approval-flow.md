@@ -33,7 +33,7 @@ Chosen option: **Option 2 — Draft -> Owner Review & Approval -> Active Lifecyc
 ```
  ┌───────────────────────────────────────────────────────────┐
  │ 1st of Month (EventBridge Scheduler)                      │
- │ Auto-create MonthlyBudget from active RecurringPayments  │
+ │ Auto-create MonthlyBudget from active RecurringPayments   │
  └─────────────────────────────┬─────────────────────────────┘
                                ▼
                         ┌─────────────┐
@@ -42,27 +42,17 @@ Chosen option: **Option 2 — Draft -> Owner Review & Approval -> Active Lifecyc
                                │ POST /budget/{y}/{m}/approve (Owner only)
                                ▼
                         ┌─────────────┐
-                        │   Active    │ ◄── Limits locked; CDC tracks spent vs limit
-                        └──────┬──────┘
-                               │ Last day of month / Next cycle
-                               ▼
-                        ┌─────────────┐
-                        │   Closed    │ ◄── Read-only archive & analytics
+                        │   Active    │ ◄── Limits locked; read-only archive for past months
                         └─────────────┘
 ```
 
 ### Schema Support in `budget_monthly_budgets`
 
 ```sql
--- Schema adjustments for budget_monthly_budgets
-ALTER TABLE budget_monthly_budgets 
-  ADD COLUMN status VARCHAR(10) NOT NULL DEFAULT 'draft' 
-    CHECK (status IN ('draft', 'active', 'closed')),
-  ADD COLUMN approved_by UUID,
-  ADD COLUMN approved_at TIMESTAMPTZ;
-
--- Soft deletes on envelopes
-ALTER TABLE budget_envelopes ADD COLUMN deleted_at TIMESTAMPTZ;
+-- Schema alignment in budget_monthly_budgets (see database-schema.md)
+status      VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','active')),
+approved_at TIMESTAMPTZ,
+approved_by UUID REFERENCES family_members(id)
 ```
 
 ### Operational Workflow
@@ -87,6 +77,6 @@ ALTER TABLE budget_envelopes ADD COLUMN deleted_at TIMESTAMPTZ;
 
 ## Compliance & Invariants
 
-* `PUT /budget/{year}/{month}/envelopes` **must reject modifications** with `409 Conflict` if the budget `status == 'active'` or `'closed'`.
+* `PUT /budget/{year}/{month}/envelopes` **must reject modifications** with `409 Conflict` if the budget `status == 'active'`.
 * Only members with `Role::Owner` **may call** `POST /budget/{year}/{month}/approve`.
 * Non-Owner members have read-only access to draft budgets.

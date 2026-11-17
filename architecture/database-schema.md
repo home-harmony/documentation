@@ -354,7 +354,7 @@ CREATE INDEX ASYNC idx_accounts_family ON payment_accounts (family_id);
 CREATE INDEX ASYNC idx_balance_snapshots_account ON account_balance_snapshots (account_id, year_month);
 
 -- 4. Ledger Transactions
-CREATE INDEX ASYNC idx_tx_family_time ON ledger_transactions (family_id, occurred_at DESC);
+CREATE INDEX ASYNC idx_tx_family_time ON ledger_transactions (family_id, occurred_at DESC, id DESC);
 CREATE INDEX ASYNC idx_tx_account_src ON ledger_transactions (source_account_id, occurred_at DESC);
 CREATE INDEX ASYNC idx_tx_account_dst ON ledger_transactions (destination_account_id, occurred_at DESC);
 

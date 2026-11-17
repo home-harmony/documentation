@@ -43,10 +43,10 @@ Chosen option: **Option 3 — Global User Identity with `X-Family-Id` Context He
    ```rust
    // api/src/auth.rs
    pub struct AuthClaims {
-       pub user_id: Uuid,
-       pub family_id: Uuid,
+       pub user_id: UserId,
+       pub family_id: FamilyId,
        pub role: Role,
-       pub permissions: Option<Vec<Permission>>,
+       pub permissions: Vec<Permission>,
        pub email: String,
    }
    ```
