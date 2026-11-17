@@ -61,6 +61,7 @@ Payments must only be created via the `Loan::record_payment(...)` method:
 impl Loan {
     pub fn record_payment(
         &mut self,
+        source_account_id: AccountId,
         paid_at: NaiveDate,
         amount: Money,
         principal_portion: Money,
@@ -71,8 +72,9 @@ impl Loan {
         let calculated_total = principal_portion.add(&interest_portion)?;
         if calculated_total != amount {
             return Err(DomainError::InvalidPaymentSplit {
-                expected: amount.to_string(),
-                actual: calculated_total.to_string(),
+                principal: principal_portion.to_string(),
+                interest: interest_portion.to_string(),
+                total: amount.to_string(),
             });
         }
 
@@ -110,6 +112,7 @@ impl Loan {
             family_id: self.family_id,
             loan_id: self.id,
             payment_id,
+            source_account_id,
             amount: payment.amount.clone(),
             principal_portion: payment.principal_portion.clone(),
             interest_portion: payment.interest_portion.clone(),

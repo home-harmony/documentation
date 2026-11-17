@@ -1,6 +1,9 @@
-# Task 1.2 Detailed Guide — Database & Event Stream Provisioning
+# Task 1.2 Detailed Guide — Database & Event Bus Provisioning
 
-> **Goal**: Provision the **Amazon Aurora DSQL** serverless cluster, configure **IAM database authentication**, create an **Amazon Kinesis Data Stream** for native Change Data Capture (CDC), create a custom **Amazon EventBridge Bus** for semantic domain events, and deploy the infrastructure stack via AWS SAM.
+> **Goal**: Provision the **Amazon Aurora DSQL** serverless cluster, configure **IAM database authentication**, create a custom **Amazon EventBridge Bus** for direct semantic domain event publishing ($0.00 idle cost), and deploy the infrastructure stack via AWS SAM.
+
+> [!NOTE]
+> **Kinesis Removed (ADR-0017)**: Amazon Kinesis Data Stream is disabled/removed because it incurs continuous hourly idle charges ($10.80–$28.80/month). Services publish typed domain events directly to EventBridge via `events:PutEvents`.
 
 ---
 
@@ -10,54 +13,31 @@
               ┌─────────────────────────────────────────────────────────┐
               │                   Rust Microservices                    │
               │  (family_service, ledger_service, cards_service, etc.)  │
-              └────────────────────────────┬────────────────────────────┘
-                                           │
-                           1. Read/Write (OCC + IAM Auth)
-                                           │
-                                           ▼
-              ┌─────────────────────────────────────────────────────────┐
-              │                   Amazon Aurora DSQL                    │
-              │   Serverless Distributed Active-Active PostgreSQL 16    │
-              └────────────────────────────┬────────────────────────────┘
-                                           │
-                                  2. Native CDC Stream
-                                           │
-                                           ▼
-              ┌─────────────────────────────────────────────────────────┐
-              │               Amazon Kinesis Data Stream                │
-              │          `familyledger-cdc-stream-dev` (On-Demand)      │
-              └────────────────────────────┬────────────────────────────┘
-                                           │
-                                3. Event-Source Trigger
-                                           │
-                                           ▼
-              ┌─────────────────────────────────────────────────────────┐
-              │                 CDC Fanout Lambda (Rust)                │
-              │            Transforms CDC row diffs to events           │
-              └────────────────────────────┬────────────────────────────┘
-                                           │
-                                4. Publish Domain Events
-                                           │
-                                           ▼
-              ┌─────────────────────────────────────────────────────────┐
-              │                Amazon EventBridge Bus                   │
-              │             `familyledger-events-dev`                   │
-              └────────────────────────────┬────────────────────────────┘
-                                           │
-                      5. Subscriptions (Rules & Targets)
-                                           │
-                 ┌─────────────────────────┼─────────────────────────┐
-                 ▼                         ▼                        ▼
-        ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
-        │  Budget Service │       │  Planning Engine│       │  Notifications  │
-        └─────────────────┘       └─────────────────┘       └─────────────────┘
+              └──────────┬───────────────────────────────────┬──────────┘
+                         │                                   │
+         1. Read/Write (OCC + IAM Auth)       2. Direct Domain Events
+                         │                                   │
+                         ▼                                   ▼
+              ┌─────────────────────────┐     ┌─────────────────────────┐
+              │   Amazon Aurora DSQL    │     │  Amazon EventBridge Bus │
+              │  Serverless Active-Active│    │  `familyledger-events-  │
+              │     PostgreSQL 16       │     │          dev`           │
+              └─────────────────────────┘     └────────────┬────────────┘
+                                                           │
+                                              3. Subscriptions (Rules & Targets)
+                                                           │
+                                 ┌─────────────────────────┼─────────────────────────┐
+                                 ▼                         ▼                         ▼
+                        ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+                        │  Budget Service │       │  Planning Engine│       │  Notifications  │
+                        └─────────────────┘       └─────────────────┘       └─────────────────┘
 ```
 
 ---
 
 ## Prerequisites: AWS IAM Permissions for CloudFormation & SAM
 
-When AWS SAM deploys the data & streaming stack, it creates custom IAM roles (`FamilyLedgerServiceRole` and `FamilyLedgerMigrationRunnerRole`) with embedded policies for Aurora DSQL and EventBridge. 
+When AWS SAM deploys the data & event stack, it creates custom IAM roles (`FamilyLedgerServiceRole` and `FamilyLedgerMigrationRunnerRole`) with embedded policies for Aurora DSQL and EventBridge.
 
 To allow CloudFormation to manage and pass these execution roles to Lambda services securely, your IAM deployer user (e.g. `programmer-user`) must have IAM management permissions conforming to AWS security best practices (scoping `iam:PassRole` with the `iam:PassedToService` condition).
 
@@ -137,17 +117,10 @@ Ensure `"status": "ACTIVE"` before proceeding.
 
 ## Step 2: Review the SAM Infrastructure Template
 
-The template [`backend/infrastructure/sam/data-stream-template.yaml`](backend/infrastructure/sam/data-stream-template.yaml) provisions:
-1. **`FamilyLedgerCdcStream`** *(Conditional)*: AWS Kinesis Data Stream with KMS encryption.
-   * > [!WARNING]
-     > **Cost Alert**: Kinesis charges a flat hourly fee even when completely idle!
-     > - `DeployKinesisStream="false"`: **$0.00 / month** (Recommended for Sprints 1–3).
-     > - `KinesisCapacityMode="PROVISIONED"` (1 shard): **$0.015/hour** (~$0.36/day, ~$10.80/month).
-     > - `KinesisCapacityMode="ON_DEMAND"`: **$0.040/hour** (~$0.96/day, ~$28.80/month).
-     > See [Kinesis Modes & Pricing Guide](../../architecture/kinesis-cdc-streaming.md) for full details.
-2. **`FamilyLedgerEventBus`**: Custom EventBridge bus for domain events ($0.00 when idle).
-3. **`FamilyLedgerServiceRole`**: IAM Execution Role allowing Rust Lambdas to connect to DSQL (`dsql:DbConnect`) and publish to EventBridge (`events:PutEvents`).
-4. **`FamilyLedgerMigrationRunnerRole`**: IAM Execution Role for migration execution with `dsql:DbConnectAdmin`.
+The template [`backend/infrastructure/sam/data-stream-template.yaml`](../../../backend/infrastructure/sam/data-stream-template.yaml) provisions:
+1. **`FamilyLedgerEventBus`**: Custom EventBridge bus (`familyledger-events-dev`) for domain events (**$0.00 when idle**).
+2. **`FamilyLedgerServiceRole`**: Least-privilege IAM Execution Role allowing Rust microservice Lambdas to connect to DSQL (`dsql:DbConnect` only — no admin DDL access) and publish to EventBridge (`events:PutEvents`).
+3. **`FamilyLedgerMigrationRunnerRole`**: IAM Execution Role for migration execution with `dsql:DbConnect` and `dsql:DbConnectAdmin`.
 
 ---
 
@@ -164,29 +137,11 @@ sam validate -t data-stream-template.yaml --lint
 
 ### 3.2 — Deploy using `sam deploy`
 
-#### Option A: Zero-Cost Deployment ($0.00 Idle Cost — Recommended for Sprint 1)
-Provisions the custom EventBridge bus and IAM roles without creating Kinesis:
-
 ```powershell
 sam deploy `
   --template-file data-stream-template.yaml `
   --config-file samconfig-data.toml `
   --capabilities CAPABILITY_NAMED_IAM
-```
-*(Uses the default in `samconfig-data.toml`: `DeployKinesisStream="false"`)*
-
-#### Option B: Deploy with 1 Provisioned Shard ($0.36/Day — For CDC Testing)
-```powershell
-sam deploy `
-  --template-file data-stream-template.yaml `
-  --config-file samconfig-data.toml `
-  --capabilities CAPABILITY_NAMED_IAM `
-  --parameter-overrides `
-    Environment="dev" `
-    DsqlClusterIdentifier="4bublzlvvtnwjpmgtotwrulv7m" `
-    DeployKinesisStream="true" `
-    KinesisCapacityMode="PROVISIONED" `
-    KinesisShardCount=1
 ```
 
 When SAM prompts:
@@ -196,7 +151,7 @@ When SAM prompts:
 
 ## Step 4: Update Local Configuration (`backend/.env.dev`)
 
-Add the newly deployed identifiers to [`backend/.env.dev`](backend/.env.dev):
+Ensure the deployed identifiers are present in `backend/.env.dev` (see `backend/.env.example`):
 
 ```bash
 # Aurora DSQL Database
@@ -204,8 +159,7 @@ DSQL_CLUSTER_ID=4bublzlvvtnwjpmgtotwrulv7m
 DSQL_ENDPOINT=4bublzlvvtnwjpmgtotwrulv7m.dsql.us-east-1.on.aws
 DATABASE_URL=postgres://admin@4bublzlvvtnwjpmgtotwrulv7m.dsql.us-east-1.on.aws:5432/postgres?sslmode=require
 
-# Event Streaming & Fanout
-CDC_KINESIS_STREAM_NAME=familyledger-cdc-stream-dev
+# Event Publishing
 EVENT_BUS_NAME=familyledger-events-dev
 ```
 
@@ -217,11 +171,7 @@ EVENT_BUS_NAME=familyledger-events-dev
    ```powershell
    aws dsql get-cluster --identifier 4bublzlvvtnwjpmgtotwrulv7m --region us-east-1
    ```
-2. **Verify Kinesis Stream**:
-   ```powershell
-   aws kinesis describe-stream --stream-name familyledger-cdc-stream-dev --region us-east-1
-   ```
-3. **Verify EventBridge Bus**:
+2. **Verify EventBridge Bus**:
    ```powershell
    aws events describe-event-bus --name familyledger-events-dev --region us-east-1
    ```

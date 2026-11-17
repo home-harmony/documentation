@@ -61,9 +61,9 @@ Chosen option: **Option 2 — Event-Driven Choreography via AWS EventBridge**.
 └──────────────────────────────────────────────────────────┘
 ```
 
-### CDC Filter Rule for Credit Card Linked Loans
+### Event Filter Rule for Credit Card Linked Loans
 
-Because `ledger_transactions` changes are captured by native Aurora DSQL CDC to update linked credit card loans (see ADR-0014), the CDC fanout handler **must filter out** transactions where `kind = 'loan_payment'`. This prevents a loan payment from erroneously re-increasing or re-decrementing the loan balance.
+Because `TransactionRecorded` domain events are published to EventBridge when ledger entries are created to update linked credit card loans (see ADR-0014), the event handler **must ignore** transactions where `kind IN ('loan_payment', 'reversal')`. This prevents a loan payment from erroneously re-increasing or re-decrementing the loan balance.
 
 ### Positive Consequences
 
@@ -80,4 +80,4 @@ Because `ledger_transactions` changes are captured by native Aurora DSQL CDC to 
 
 * `debt_planner_service` **must never** execute SQL queries against `ledger_transactions`.
 * `ledger_service` **must** handle `LoanPaymentRecorded` events and ensure idempotent transaction creation using `payment_id`.
-* The CDC fanout Lambda **must** ignore `ledger_transactions` with `kind IN ('loan_payment', 'reversal')` when synchronizing credit card balances.
+* Linked credit card balance synchronization **must** ignore `ledger_transactions` with `kind IN ('loan_payment', 'reversal')`.

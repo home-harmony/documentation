@@ -190,7 +190,7 @@ LIMIT 500;
 | **Operational Burden** | High (Kinesis, Shards, Fanout) | Minimal (SDK call) | Moderate (Outbox poller) | Minimal (Cron query) |
 | **Captures Non-App DB Edits** | Yes (Engine native) | No (App code only) | No (App code only) | Yes |
 | **Event Replay Capability** | Yes (Kinesis 24h–365d log) | No (requires EventBridge Archive)| Yes (if outbox rows kept) | Yes (table scan) |
-| **Recommended Environment** | **High-Scale Production** | **Development & Sprints 1–3**| **Cost-Sensitive Production**| **Analytics & Reporting** |
+| **Recommended Environment** | **Archived (Disabled due to idle cost)** | **Active Architecture (All Sprints & MVP)**| **Future Atomic Upgrade ($0 idle)**| **Analytics & Reporting** |
 
 ---
 
@@ -208,48 +208,32 @@ If Approach 1 is selected, configuring the stream capacity mode determines the c
 
 ---
 
-## 5. Strategic Recommendations for FamilyLedger
+## 5. Strategic Decision for FamilyLedger (Kinesis Disabled / Removed)
 
-### Phase 1: Sprints 1–3 (Current Stage)
-* **Strategy**: **Direct Domain Event Publishing / Zero-Kinesis Deployment**.
-* **Action**: Keep `DeployKinesisStream="false"` in [`backend/infrastructure/sam/data-stream-template.yaml`](../../backend/infrastructure/sam/data-stream-template.yaml).
-* **Cost**: **$0.00 / month**.
-* **Rationale**: Sprints 1–3 focus on domain logic, database migrations (Task 3.1), and basic CRUD APIs. No downstream CDC consumers exist yet. Paying $28.80/month for an idle Kinesis stream is unnecessary.
+> [!IMPORTANT]
+> **Active Decision (2026-11-17)**: Amazon Kinesis Data Stream and `cdc_fanout` are **disabled and removed** from `backend/infrastructure/sam/data-stream-template.yaml` due to fixed hourly idle charges ($10.80–$28.80/month even at zero traffic). All microservices use **Approach 2 (Direct Domain Event Publishing to Amazon EventBridge)** at **$0.00 idle cost**.
 
-### Phase 2: Sprint 4 (CDC Fanout Testing in Dev)
-* **Strategy**: **Provisioned Mode (1 Shard)** or **LocalStack**.
-* **Action**: Deploy with `DeployKinesisStream="true"`, `KinesisCapacityMode="PROVISIONED"`, `KinesisShardCount=1`.
-* **Cost**: **$0.36 / day** (~$10.80 / month).
-* **Rationale**: Allows testing end-to-end integration with the real AWS Kinesis API while cutting base costs by 63% compared to On-Demand.
+### Active Architecture: Direct Domain Event Publishing (`$0.00` Idle Cost)
+* **Strategy**: **Direct Domain Event Publishing to `familyledger-events-{env}`**.
+* **Action**: `backend/infrastructure/sam/data-stream-template.yaml` provisions only `FamilyLedgerEventBus` and least-privilege IAM roles (no Kinesis stream).
+* **Cost**: **$0.00 / month** when idle ($1.00 per 1M published events).
+* **Rationale**: Maintains strict zero-idle serverless economics while delivering rich typed `DomainEvent` payloads (`Vec<DomainEvent>` returned by aggregate methods) directly to EventBridge in <25 ms.
 
-### Phase 3: Production Deployment
-* **Option A (Low-cost serverless)**: Use the **Transactional Outbox Pattern**. Keeps entire production stack at **$0.00 idle cost** while maintaining 100% atomic consistency for family-scale transaction volumes.
-* **Option B (Enterprise scale)**: Use **Native DSQL CDC $\rightarrow$ Kinesis On-Demand**. Provides fully managed, zero-maintenance, active-active multi-region change streaming for high-throughput commercial tiers.
+### Future Scale-Up Options (If Strict Storage-Level CDC Is Ever Needed)
+* **Cost-Sensitive Atomic Guarantee**: Adopt **Approach 3 (Transactional Outbox Pattern)** inside Aurora DSQL to preserve `$0.00` idle cost without Kinesis.
+* **Enterprise High-Throughput Tier**: Re-introduce **Approach 1 (Native DSQL CDC $\rightarrow$ Kinesis On-Demand)** only when continuous 24/7 transaction volume justifies the fixed monthly stream fee.
 
 ---
 
-## 6. How to Delete and Re-Create the Stack
+## 6. Managing the Data & Event Stack
 
-### Deleting to Stop All Kinesis Charges
-```powershell
-sam delete --stack-name familyledger-data-dev --region us-east-1 --no-prompts
-```
-
-### Re-Creating in Zero-Cost Mode ($0.00 Idle)
+### Deploying / Updating the Zero-Cost Stack
 ```powershell
 cd backend/infrastructure/sam
 sam deploy --config-file samconfig-data.toml
 ```
 
-### Re-Creating with 1 Provisioned Shard ($0.36/day)
+### Deleting the Data Stack
 ```powershell
-cd backend/infrastructure/sam
-sam deploy `
-  --config-file samconfig-data.toml `
-  --parameter-overrides `
-    Environment="dev" `
-    DsqlClusterIdentifier="4bublzlvvtnwjpmgtotwrulv7m" `
-    DeployKinesisStream="true" `
-    KinesisCapacityMode="PROVISIONED" `
-    KinesisShardCount=1
+sam delete --stack-name familyledger-data-dev --region us-east-1 --no-prompts
 ```

@@ -25,7 +25,7 @@ This document defines the official domain vocabulary, business rules, and calcul
 | **LoanKind** | Debt Planner | A categorization label for a loan. System-standard kinds (mortgage, car loan, student loan, etc.) apply to all families. Families may also create custom kinds in their own language. |
 | **LoanPayment** | Debt Planner | A child entity of `Loan` recording a single payment with its principal/interest split. Enforces `principal_portion + interest_portion == amount`. |
 | **DebtServiceCost** | Debt Planner | The true total monthly cost of servicing a loan: `monthly_payment + sum(linked_insurance_payments)`. Used in the True Disposable Surplus formula. |
-| **LinkedCreditCard** | Debt Planner | A `PaymentAccount(CreditCard)` explicitly linked to a `Loan` via `linked_account_id`. Spending on the card auto-increments the loan balance via CDC. |
+| **LinkedCreditCard** | Debt Planner | A `PaymentAccount(CreditCard)` explicitly linked to a `Loan` via `linked_account_id`. Spending on the card auto-increments the loan balance via EventBridge (`TransactionRecorded`). |
 | **Avalanche Strategy** | Debt Planner | Debt payoff method prioritizing loans by highest `annual_interest_rate` descending to minimize total interest paid. |
 | **Snowball Strategy** | Debt Planner | Debt payoff method prioritizing loans by lowest `current_balance` ascending for psychological momentum. |
 | **GoalContribution** | Future Planning | A child entity recording a single savings deposit toward a `SavingsGoal`. The goal's `current_saved` is computed as the sum of all its contributions. |

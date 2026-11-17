@@ -35,7 +35,7 @@ Households of 2–10 members (adults, children, extended family, caretakers) sha
 | **Payment Instrument Registry & Snapshots** | Credit cards, debit cards, cash envelopes, bank accounts per member (`payment_accounts`); monthly closing balance snapshots for balance trend history (ADR-0006). | **P0** |
 | **Ledger Core & Immutability** | Immutable double-entry transactions (`Income`, `Expense`, `Transfer`, `CashWithdrawal`, `LoanPayment`, `Reversal`), dual-amount cross-currency transfers, and accounting amendments via `POST /transactions/{id}/amend` (ADR-0012, ADR-0015). | **P0** |
 | **Recurring Payments & Loan Insurance** | Registry of fixed bills & subscriptions, automated committed obligation calculation, and loan-bound insurance tracking linked via `linked_loan_id` (ADR-0010). | **P0** |
-| **Debt Planner & Optimizer** | Loan registry with extensible system/custom loan kinds (ADR-0007), child entity `LoanPayment` with split invariants (ADR-0008), event-driven ledgerization (ADR-0009), credit card balance CDC sync (ADR-0014), and automated Avalanche/Snowball plan calculator. | **P0** |
+| **Debt Planner & Optimizer** | Loan registry with extensible system/custom loan kinds (ADR-0007), child entity `LoanPayment` with split invariants (ADR-0008), event-driven ledgerization (ADR-0009), credit card balance event sync (ADR-0014), and automated Avalanche/Snowball plan calculator. | **P0** |
 | **Monthly Budget & Governance** | Monthly budget lifecycle: 1st-of-month auto-seeded `Draft` budget, Owner review and adjustment, and formal Owner approval before locking envelope limits (ADR-0013). | **P1** |
 | **Currency & Exchange Rates** | Pluggable `ExchangeRateProvider` trait fetching daily official rates from BNM (Moldova) / ECB Frankfurter; automatic conversion to family home display currency (ADR-0015, ADR-0016). | **P1** |
 | **Future Planning & Goals** | Goal-based savings timelines, contribution recording via `GoalContribution` child entities, and on-track progress projections. | **P1** |
@@ -49,10 +49,9 @@ Households of 2–10 members (adults, children, extended family, caretakers) sha
 | AWS Service | Cost Model | Estimated Monthly Cost |
 | :--- | :--- | :--- |
 | **Amazon Aurora DSQL** | Scales to zero; 100k DPUs + 1GB free tier | **$0.00** |
-| **AWS Lambda** | First 1M requests free (microservices, CDC fanout, exchange rate fetcher, migration runner) | **$0.00** |
+| **AWS Lambda** | First 1M requests free (microservices, exchange rate fetcher, migration runner) | **$0.00** |
 | **API Gateway** | First 1M HTTP API requests free | **$0.00** |
 | **AWS Cognito** | First 50k MAU free | **$0.00** |
-| **Kinesis Data Streams** | On-demand negligible tier for CDC streams | **$0.00** |
 | **CloudFront + S3** | Static web hosting & CDN data transfer | ~\$0.50 |
-| **EventBridge & Scheduler** | Domain events bus, month-start budget draft, month-end balance snapshot, and daily rate fetch | ~\$0.10 |
+| **EventBridge & Scheduler** | Direct domain events bus (Kinesis disabled for \$0 idle cost), month-start budget draft, month-end balance snapshot, and daily rate fetch | ~\$0.10 |
 | **Total Estimated Footprint** | Zero idle compute / Serverless architecture | **~\$0.60 / month** |

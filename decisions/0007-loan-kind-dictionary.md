@@ -84,6 +84,6 @@ Family-defined kinds have `family_id` set to the creating family's UUID, `is_sys
 * All system seed rows **must** be inserted in the schema migration and must not be hard-coded in application code.
 * Family kinds are exposed and managed via the API:
   * `GET /loan-kinds` — returns system kinds merged with the requesting family's custom kinds.
-  * `POST /loan-kinds` — creates a custom kind scoped to the requesting family; requires `Admin` or `Owner` role.
+  * `POST /loan-kinds` — creates a custom kind scoped to the requesting family; requires `Owner` or `Member` role.
 * The debt planner **must** identify high-priority categories (e.g., payday loans) by the stable system `code` field, never by the mutable `name` field.
 * System kinds (`is_system = TRUE`) **must not** be modifiable or deletable via the API.

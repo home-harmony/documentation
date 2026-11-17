@@ -18,17 +18,17 @@ The Home Harmony system comprises multiple disparate codebases: backend Rust mic
 3. **Completely Disconnected Repositories with No Shared Local Parent**
 
 ## Decision Outcome
-Chosen option: **Umbrella Workspace (`home-harmony`) with Independent Repositories**, where `home-harmony` acts as the root parent folder containing `.agents/`, `AGENTS.md`, and individual sub-repositories (`documentation/`, `backend/`, `frontend-web/`, `frontend-mobile/`).
+Chosen option: **Umbrella Workspace (`home-harmony`) with Independent Repositories**, where `home-harmony` acts as the root parent folder containing individual sub-repositories (`documentation/`, `backend/`, `frontend-web/`, `frontend-mobile/`), and repository-specific agent rules (such as `backend/AGENTS.md`) live inside their respective repositories.
 
 ### Positive Consequences
 * AI agents can read central documentation and implement changes across backend or frontend simultaneously.
-* Shared agent skills in `.agents/skills/` are globally accessible to all sub-repositories.
+* Each sub-repository maintains self-contained agent rules (`backend/AGENTS.md`) and build configurations.
 * Repositories can be pushed to separate GitHub remotes independently.
 
 ### Negative Consequences / Trade-offs
 * Developers must clone/initiate sub-repos into the umbrella workspace.
 
 ## Compliance & Invariants
-* The root `home-harmony` workspace contains global agent rules (`AGENTS.md`, `GEMINI.md`) and `.agents/skills/`.
+* Sub-repositories maintain their own agent instruction files (e.g. `backend/AGENTS.md`) alongside central architectural documentation in `documentation/`.
 * Each sub-repository manages its own `.gitignore` and build files.
 

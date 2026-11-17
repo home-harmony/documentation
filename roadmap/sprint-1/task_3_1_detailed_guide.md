@@ -391,7 +391,7 @@ CREATE INDEX ASYNC idx_balance_snapshots_account ON account_balance_snapshots (a
 
 #### `20260616000022_idx_tx_family_time.sql`
 ```sql
-CREATE INDEX ASYNC idx_tx_family_time ON ledger_transactions (family_id, occurred_at DESC);
+CREATE INDEX ASYNC idx_tx_family_time ON ledger_transactions (family_id, occurred_at DESC, id DESC);
 ```
 
 #### `20260616000023_idx_tx_account_src.sql`
@@ -491,7 +491,7 @@ cargo sqlx prepare -- --all-targets
 - [ ] Exactly 34 migration files exist in `backend/migrations/`.
 - [ ] Every file contains **exactly one DDL statement**.
 - [ ] No DML (`INSERT`, `UPDATE`) is present in any migration file.
-- [ ] All table PKs use `UUID PRIMARY KEY DEFAULT gen_random_uuid()`.
+- [ ] All tables define `UUID PRIMARY KEY DEFAULT gen_random_uuid()` (UUID v4 tables use the default or `Uuid::new_v4()`, while UUID v7 time-series tables receive `Uuid::now_v7()` from the Rust domain layer).
 - [ ] All indexes use `CREATE INDEX ASYNC`.
 - [ ] Foreign key constraints (`REFERENCES`) are present and valid across all related tables.
 - [ ] `sqlx migrate run` applies all 34 migrations in order without error.

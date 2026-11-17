@@ -80,7 +80,7 @@ POST   /recurring/{id}/records           # Record actual payment made for a peri
 
 ### 2.7 Monthly Budget & Envelopes
 ```http
-GET    /budget/{year}/{month}            # Get monthly budget with status (Draft/Active/Closed), envelopes, and spent amounts
+GET    /budget/{year}/{month}            # Get monthly budget with status (Draft/Active), envelopes, and spent amounts
 PUT    /budget/{year}/{month}/envelopes  # Draft status only: adjust discretionary envelope spending limits
 POST   /budget/{year}/{month}/approve    # Owner only: approve draft budget -> transitions to Active, locks envelope limits (ADR-0013)
 ```
