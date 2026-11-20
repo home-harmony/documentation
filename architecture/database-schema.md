@@ -46,7 +46,7 @@ CREATE TABLE family_members (
 CREATE TABLE family_invite_tokens (
   token           UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id       UUID          NOT NULL REFERENCES family_families(id),
-  role            VARCHAR(10)   NOT NULL CHECK (role IN ('owner','member','child','other')),
+  role            VARCHAR(10)   NOT NULL CHECK (role IN ('member','child','other')),
   permissions     JSONB         NOT NULL DEFAULT '[]'::jsonb,  -- JSON array of Permission flags for Role::Other invites
   relationship    VARCHAR(50),
   created_by      UUID          NOT NULL REFERENCES family_members(id),

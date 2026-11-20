@@ -8,12 +8,13 @@ All API endpoints are hosted via Amazon API Gateway HTTP API and secured with AW
 
 1. **Bearer Token**: Every request must include `Authorization: Bearer <cognito_jwt>` in the HTTP headers.
 2. **User Identity & Multi-Family Isolation**: 
-   * User identity (`user_id`, `email`) is extracted from the validated Cognito JWT claims (`sub`, `email`).
+   * User identity (`user_id` from `sub`, plus optional `email` when using Cognito ID tokens; Access Tokens carry `sub` without `email`) is extracted from the validated Cognito JWT claims.
    * Multi-family workspace context is passed via the `X-Family-Id: <UUID>` request header for all family-scoped endpoints.
    * Authorization middleware verifies that `user_id` is an active member of `family_id` with sufficient role/permissions (ADR-0011).
 3. **Idempotency**: All state-modifying endpoints (`POST` for transactions, payments, contributions) require a client-generated `idempotency_key: UUID`.
 4. **Pagination**: List endpoints use keyset pagination via opaque cursor tokens (`cursor=<base64>`). `OFFSET` is strictly banned (ADR-0002).
 5. **Ledger Immutability**: `PUT /transactions/{id}` is prohibited (`405 Method Not Allowed`). Transaction adjustments use the amendment pattern (`POST /transactions/{id}/amend`, ADR-0012).
+6. **Error Responses (`application/problem+json` per RFC 9457)**: All error responses return RFC 9457 Problem Details containing `type`, `title`, `status`, `detail`, and a stable machine-readable `code` (e.g. `INSUFFICIENT_ROLE`, `TOKEN_EXPIRED`, `MEMBER_ALREADY_EXISTS`) mapped in `api/src/errors.rs` and `api/src/auth.rs` for frontend localization.
 
 ---
 

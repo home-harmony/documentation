@@ -33,7 +33,7 @@ Chosen option: **Option 3 — Global User Identity with `X-Family-Id` Context He
 
 ### Architectural Changes
 
-1. **Cognito Token**: Contains user identity claims (`sub`, `email`) but no static `custom:family_id` or `custom:family_role` claims.
+1. **Cognito Token**: Identifies the authenticated user (`sub`, plus optional `email` on ID tokens). Compatible with both standard Cognito **Access Tokens** (`email` absent -> `None`) and **ID Tokens** (`email` validated -> `Some(Email)`), with no static `custom:family_id` or `custom:family_role` claims.
 2. **Request Header**: All family-scoped API requests must include:
    ```http
    X-Family-Id: 018f3a5e-9a2b-7c3d-8e4f-123456789abc
@@ -47,7 +47,7 @@ Chosen option: **Option 3 — Global User Identity with `X-Family-Id` Context He
        pub family_id: FamilyId,
        pub role: Role,
        pub permissions: Vec<Permission>,
-       pub email: Email,
+       pub email: Option<Email>,
    }
    ```
    The middleware extracts `user_id` from the JWT and `family_id` from `X-Family-Id`, then validates against `family_members`:

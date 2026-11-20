@@ -33,11 +33,11 @@ Before writing a specification or slicing a feature:
 
 ### Drafting Steps (AI Agent)
 1. Register or verify a unique 2–4 uppercase prefix (`VO`, `FM`, `LD`, `LN`, `BG`, `AU`) in [`backend/specs/README.md`](../../../../backend/specs/README.md).
-2. Follow [`backend/specs/TEMPLATE.md`](../../../../backend/specs/TEMPLATE.md) (`Vocabulary`, `Seams`, `Rules`, `Open Questions`, `Findings`).
+2. Follow [`backend/specs/TEMPLATE.md`](../../../../backend/specs/TEMPLATE.md) (`Test seam` metadata header, `Vocabulary`, `Rules`, `Open Questions`, `Findings`).
 3. Every rule MUST include:
    - **ID**: `<PREFIX>-<NN>` (never reused, never renumbered).
    - **Status**: Always **`Draft`** (only humans may set `Approved`).
-   - **Origin**: `human`, `adr:NNNN`, `doc:<path>`, or `observed` (inferred from existing code/tests; CI blocks `Approved` rules that still have `Origin: observed`).
+   - **Origin**: `human`, `adr:NNNN`, `doc:<path>`, or `observed` (inferred from existing code/tests; `spec_traceability` blocks `Approved` rules that still have `Origin: observed`).
    - **Concrete inputs, single action, observable outcome** (exact `DomainError` variant, public state, or HTTP status/error code).
 4. Record any doc/code/test contradictions in **Findings** and add **Open Questions** rather than guessing.
 
@@ -66,9 +66,9 @@ When breaking a large spec or sprint roadmap item (e.g., [`sprint-roadmap.md`](.
 When generating tests for **`Approved`** rules only (ignore `Draft` and `Deprecated`):
 1. **Context Isolation (Blindness)**:
    - **Allowed**: Approved rules + Vocabulary in `backend/specs/**`, public API signatures/docstrings (`pub` items in `backend/*/src/`), `test_support` fixtures/fakes.
-   - **Forbidden**: Do NOT read function implementation bodies or internal `#[cfg(test)]` blocks of the unit under test. (If tooling cannot isolate bodies, explicitly note in the report that blindness was constrained so the human reviews carefully.)
-2. **Implement 1:1 Traceable Tests**: Place tests in `<crate>/tests/<prefix_lowercase>_<topic>.rs` containing the exact rule ID (`"VO-01"` or `fn vo_01_...`). Never generate tests for `Draft` or `Deprecated` rules (blocked by `spec_traceability`).
-3. **Verify Traceability**: Run `cargo test -p domain --test spec_traceability` in `../backend/` (enforces all 4 automated guardrails).
+   - **Forbidden**: Do NOT read function implementation bodies or internal `#[cfg(test)]` blocks of the unit under test. To stay blind in Rust (where signatures and bodies share a file), inspect `cargo doc --no-deps` output or delegate `pub` signature/docstring extraction to a separate read-only subagent. (If tooling cannot isolate bodies, explicitly note in the report that blindness was constrained so the human reviews carefully.)
+2. **Implement 1:1 Traceable Tests**: Place tests in `<crate>/tests/<prefix_lowercase>_<topic>.rs` containing the exact rule ID (`"VO-01"` or `#[test] fn vo_01_...`). Never generate tests for `Draft` or `Deprecated` rules (blocked by `spec_traceability`).
+3. **Verify Traceability**: Run `cargo test -p domain --test spec_traceability` in `../backend/` (enforces the 4 checks documented in [`backend/specs/README.md`](../../../../backend/specs/README.md)).
 4. **Red-Test Mismatch Halt**: If a faithful spec test fails against existing code, **DO NOT** weaken the assertion or edit the spec rule. Stop and emit:
    ```markdown
    ### SPEC–CODE MISMATCH DETECTED

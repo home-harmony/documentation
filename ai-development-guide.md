@@ -6,7 +6,7 @@ Practical handbook for working effectively with AI agents across the `documentat
 
 ## 1. How the System Fits Together
 
-To keep every customization tracked on GitHub across our two-repository umbrella ([ADR-0004](./decisions/0004-multi-repo-organization.md)), AI configuration lives inside `documentation/` and `backend/`—never at the untracked `home-harmony/` parent folder:
+To keep every customization tracked on GitHub across our two-repository umbrella ([ADR-0004](./decisions/0004-multi-repo-organization.md)), AI configuration lives inside `documentation/` and `backend/`—never at the untracked `home-harmony/` parent folder. **IDE Setup**: open `documentation/` and `backend/` together as a **multi-root workspace** (two workspace folders) rather than opening the parent `home-harmony/` directory; otherwise Antigravity cannot walk downward to discover either repo's `AGENTS.md` or `.agents/skills.json`.
 
 | Layer | Purpose | Location (`documentation/` + `backend/`) | When Loaded |
 | :--- | :--- | :--- | :--- |
@@ -130,4 +130,4 @@ To keep every customization tracked on GitHub across our two-repository umbrella
 - **`/plan`**: Switch on step-by-step planning before large multi-crate changes.
 - **`/compact`**: Free context window tokens mid-session without losing key workspace state.
 - **`/learn`**: Persist recurring corrections or hard-won workflow fixes across future sessions.
-- **Human Governance Reminder**: Periodically review [`backend/specs/`](../backend/specs/README.md) to resolve open questions, replace `Origin: observed` with confirmed intent, and promote validated `Draft` rules to `Approved`—`spec_traceability` mechanically enforces all 4 guardrails in CI.
+- **Human Governance Reminder**: Periodically review [`backend/specs/`](../backend/specs/README.md) to resolve open questions, replace `Origin: observed` with confirmed intent, and promote validated `Draft` rules to `Approved`—`spec_traceability` enforces all checks listed in [`backend/specs/README.md`](../backend/specs/README.md).

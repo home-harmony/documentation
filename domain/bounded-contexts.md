@@ -74,7 +74,7 @@ Registry of all payment instruments across family members (Credit Cards, Debit C
   - `account_id: AccountId`
   - `family_id: FamilyId`
   - `year_month: YearMonth`   -- 'YYYY-MM'
-  - `closing_balance: Money`
+  - `closing_balance: SignedMoney` -- signed decimal + `CurrencyCode` (account balances can be negative, e.g., overdraft or credit card debt, whereas `Money` is strictly `>= 0`)
   - `computed_at: DateTime<Utc>`
 
 *Note: Current balance for display = latest snapshot `closing_balance` + delta from ledger transactions since snapshot date. Snapshot is computed monthly by `accounts_service` on EventBridge Scheduler trigger.*

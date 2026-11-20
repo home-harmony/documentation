@@ -3,6 +3,7 @@
 Welcome to the central documentation repository for **FamilyLedger**, a private, family-shared financial hub built on AWS Serverless and Rust.
 
 > 🇷🇺 **Для пользователей и членов семьи**: Описание проекта простыми словами на русском языке доступно в файле **[README.ru.md](README.ru.md)**.
+> 🤖 **AI IDE Setup**: Because `documentation/` and `backend/` are separate Git repositories ([ADR-0004](decisions/0004-multi-repo-organization.md)), open both folders together as a **multi-root workspace** (not the parent `home-harmony/` folder) so `AGENTS.md` and `.agents/skills.json` auto-discover cleanly.
 
 ---
 

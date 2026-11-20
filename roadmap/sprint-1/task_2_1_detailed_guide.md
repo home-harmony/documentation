@@ -43,9 +43,9 @@
 
 | Crate | Purpose | Allowed Dependencies | Invariants & Rules |
 | :--- | :--- | :--- | :--- |
-| **`domain`** | Pure business entities (`Family`, `FamilyMember`, `InviteToken`), value objects (`Money`, `CurrencyCode`, `FamilyName`, `DisplayName`, `Email`, `Relationship`, `InviteTtl`, `Role`, `Permission`, typed IDs), domain events, domain errors, and debt repayment algorithms. | `rust_decimal`, `uuid`, `chrono`, `serde`, `serde_json`, `nutype`, `thiserror` | **STRICT ZERO I/O**: Never import `sqlx`, `tokio`, `axum`, `reqwest`, `aws-sdk-*`, or filesystem APIs. |
-| **`infrastructure`** | Database access (Aurora DSQL via SQLx), keyset pagination, EventBridge publisher, BNM/ECB exchange rate fetcher, Testcontainers setup. | `domain`, `sqlx`, `aurora-dsql-sqlx-connector`, `tokio`, `serde`, `serde_json`, `rust_decimal`, `uuid`, `chrono`, `thiserror`, `anyhow`, `base64`, `tracing` | Implements domain repository traits; handles OCC retry logic and IAM token refresh. |
-| **`api`** | Common web concerns: `ApiError` responses, `AuthClaims` extraction (`user_id` from JWT, `family_id` from verified `X-Family-Id` membership), standard JSON helpers (`ok`, `created`, `no_content`). | `domain`, `axum`, `lambda_http`, `tower`, `tower-http`, `jsonwebtoken`, `tokio`, `serde`, `serde_json`, `uuid`, `chrono`, `thiserror`, `tracing` | Extracts authenticated context from HTTP requests and delegates to application use-cases. |
+| **`domain`** | Pure business entities (`Family`, `FamilyMember`, `InviteToken`), value objects (`Money`, `CurrencyCode`, `FamilyName`, `DisplayName`, `Email`, `Relationship`, `InviteTtl`, `Role`, `Permission`, `DomainAction`, typed IDs), domain events, domain errors, and debt repayment algorithms. | `rust_decimal`, `uuid`, `chrono`, `serde`, `nutype`, `email_address`, `thiserror` (`serde_json` in `dev-dependencies`) | **STRICT ZERO I/O**: Never import `sqlx`, `tokio`, `axum`, `reqwest`, `aws-sdk-*`, or filesystem APIs. |
+| **`infrastructure`** | Database access (Aurora DSQL via SQLx), keyset pagination, EventBridge publisher, BNM/ECB exchange rate fetcher, Testcontainers setup. | `sqlx`, `aurora-dsql-sqlx-connector`, `tokio`, `serde`, `serde_json`, `rust_decimal`, `uuid`, `chrono`, `thiserror`, `anyhow`, `base64`, `tracing` *(add `domain` in Sprint 2 when implementing repository traits)* | Implements domain repository traits; handles OCC retry logic and IAM token refresh. |
+| **`api`** | Common web concerns: RFC 9457 `ApiError` responses, `AuthClaims` extraction (`user_id` + optional `email` from JWT, `family_id` from verified `X-Family-Id` membership), standard JSON helpers (`ok`, `created`, `no_content`). | `domain`, `axum`, `tower`, `tokio`, `serde`, `serde_json`, `uuid`, `chrono`, `thiserror`, `tracing` *(add `lambda_http`, `tower-http`, `jsonwebtoken` in Sprint 2 HTTP/JWT middleware)* | Extracts authenticated context from HTTP requests and delegates to application use-cases. |
 | **`lambdas/*`** | Standalone executables compiled for AWS Lambda (ARM64 / Graviton). | `domain`, `infrastructure`, `api`, `lambda_runtime`, `lambda_http`, `tokio`, `sqlx`, `anyhow`, `tracing*` | Thin composition roots that wire together pools, repositories, config, and invoke use-cases. |
 
 ---
@@ -139,11 +139,9 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 
 axum = { version = "0.8.9", features = ["macros"] }
-lambda_http = "1.3.2"
 lambda_runtime = "1.5.0"
 tower = "0.5.3"
-tower-http = { version = "0.7.1", features = ["trace", "cors"] }
-jsonwebtoken = "12.0.0"
+# Note: `lambda_http`, `tower-http`, and `jsonwebtoken` will be added when Sprint 2 HTTP/JWT middleware lands.
 
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
@@ -152,29 +150,31 @@ thiserror = "2.0.21"
 anyhow = "1.0.104"
 base64 = "0.23.1"
 nutype = { version = "0.8.0", features = ["serde"] }
+email_address = { version = "0.2.9", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"
+expect_used = "deny"
 ```
 
 ---
 
 ### Step 3: `domain` Crate (`backend/domain/`)
 
-* **`Cargo.toml`**: inherits `version.workspace = true`, `edition.workspace = true`, `license.workspace = true`, `[lints] workspace = true`, and zero-I/O dependencies (`rust_decimal`, `uuid`, `chrono`, `serde`, `serde_json`, `thiserror`, `nutype`; dev-dep `rust_decimal_macros`).
+* **`Cargo.toml`**: inherits `version.workspace = true`, `edition.workspace = true`, `license.workspace = true`, `[lints] workspace = true`, and zero-I/O dependencies (`rust_decimal`, `uuid`, `chrono`, `serde`, `thiserror`, `nutype`, `email_address`; dev-deps `rust_decimal_macros`, `serde_json`).
 * **`src/lib.rs`**: exports `entities`, `errors`, `events`, and `value_objects`.
 * **Value Objects**:
-  * `CurrencyCode` (3 uppercase ASCII letters via `nutype`)
-  * `Email` (trimmed, lowercased, validated email address via `nutype`)
+  * `CurrencyCode` (3 uppercase ASCII letters via `nutype`, constructed via `try_new`)
+  * `Email` (trimmed, lowercased, RFC-validated via `nutype` + `email_address`)
   * `FamilyName` (trimmed, non-empty, max 200 chars via `nutype`)
   * `DisplayName` (trimmed, non-empty, max 100 chars via `nutype`)
   * `Relationship` (trimmed, non-empty, max 50 chars via `nutype`)
-  * `InviteTtl` (strictly positive invite expiration duration in seconds via `nutype`)
-  * `Money` (`rust_decimal::Decimal` + `CurrencyCode`, currency-safe arithmetic)
-  * `Role` (`Owner`, `Member`, `Child`, `Other`) & `Permission` (8 capability flags)
+  * `InviteTtl` (bounded positive invite expiration duration `1..=2_592_000` seconds via `nutype`)
+  * `Money` (`rust_decimal::Decimal >= 0` + `CurrencyCode`, currency-safe checked arithmetic)
+  * `Role` (`Owner`, `Member`, `Child`, `Other`), `Permission` (8 capability flags), & `DomainAction`
   * Strongly-typed UUID v4 / v7 newtypes in `ids.rs` (`FamilyId`, `MemberId`, `UserId`, `InviteTokenId`, `TransactionId`, etc.)
 * **Aggregates & Events**:
   * `Family`, `FamilyMember`, `InviteToken` in `entities/family.rs`
@@ -196,8 +196,8 @@ unwrap_used = "deny"
 
 * **`Cargo.toml`**: inherits workspace metadata and `[lints] workspace = true`.
 * **`src/lib.rs`**: exports `pub mod auth; pub mod errors; pub mod response;`.
-* **`src/auth.rs`**: `AuthClaims` (`user_id: UserId`, `family_id: FamilyId`, `role: Role`, `permissions: Vec<Permission>`, `email: Email`) Axum extractor + `AuthError`.
-* **`src/errors.rs`**: `ApiError` JSON body and `domain_error_response(DomainError) -> Response`.
+* **`src/auth.rs`**: `AuthClaims` (`user_id: UserId`, `family_id: FamilyId`, `role: Role`, `permissions: Vec<Permission>`, `email: Option<Email>`) Axum extractor + `AuthError`.
+* **`src/errors.rs`**: RFC 9457 `ApiError` (`application/problem+json`) and exhaustive `domain_error_response(DomainError) -> Response`.
 * **`src/response.rs`**: `ok`, `created`, and `no_content` JSON helpers.
 
 ---

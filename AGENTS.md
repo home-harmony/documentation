@@ -1,7 +1,7 @@
 # AGENTS.md — HomeHarmony (`documentation/` & Umbrella Entry Point)
 
-> Primary entry point for AI agents working in `documentation/` or across the `home-harmony/` umbrella workspace.
-> **Two-Repo Rule ([ADR-0004](./decisions/0004-multi-repo-organization.md))**: `documentation/` and `backend/` are separate Git repositories. Never write project files at the untracked `home-harmony/` root.
+> Primary entry point for AI agents working in `documentation/` or across the `home-harmony/` repositories.
+> **Two-Repo Rule ([ADR-0004](./decisions/0004-multi-repo-organization.md))**: `documentation/` and `backend/` are separate Git repositories. Never write project files at the untracked `home-harmony/` root; open `documentation/` and `backend/` as a **multi-root workspace** so both repos' `AGENTS.md` and `.agents/skills.json` auto-discover cleanly.
 
 ---
 
@@ -21,9 +21,11 @@ When working in Rust code or migrations, also read [`../backend/AGENTS.md`](../b
 ## 2. Rules & Skills Index
 
 ### A. Modular Rules (Always Enforced)
-- **Common & Governance Rules**: [`.ai/rules/common.md`](./.ai/rules/common.md) — human approval boundaries, blind test generation, canonical vocabulary, RFC 9457 errors, ADR-0018 AI/SDUI safety, review gate.
-- **Backend Rust Rules**: [`../backend/.ai/rules/backend-rust.md`](../backend/.ai/rules/backend-rust.md) — hexagonal purity, Deep Modules, `nutype`, `Decimal`, SLAP/Newspaper ordering, zero `.unwrap()`.
-- **Aurora DSQL Rules**: [`../backend/.ai/rules/aurora-dsql.md`](../backend/.ai/rules/aurora-dsql.md) — 1-DDL-per-file, `CREATE INDEX ASYNC`, UUID v4/v7, OCC retry, `BEGIN READ ONLY`, keyset pagination.
+@[Common Workspace Rules](./.ai/rules/common.md)
+
+Backend-specific rules (auto-included by [`../backend/AGENTS.md`](../backend/AGENTS.md)):
+- **Backend Rust Rules**: [`../backend/.ai/rules/backend-rust.md`](../backend/.ai/rules/backend-rust.md)
+- **Aurora DSQL Rules**: [`../backend/.ai/rules/aurora-dsql.md`](../backend/.ai/rules/aurora-dsql.md)
 
 ### B. Optimized Skills (7 Total, Auto-Discovered via `.agents/skills.json`)
 
