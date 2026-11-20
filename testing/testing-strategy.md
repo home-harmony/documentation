@@ -67,5 +67,18 @@ cargo test -p ledger_service
 
 # Prepare SQLx query verification cache for CI
 cargo sqlx prepare -- --all-targets
+
+# Verify declarative spec <-> test traceability (ADR-0019)
+cargo test -p domain --test spec_traceability
 ```
+
+---
+
+## 3. Spec-Driven Testing & Traceability ([ADR-0019](../decisions/0019-declarative-test-specifications.md))
+
+- **Source of Truth (Self-Contained in `backend/`)**: Behavior specifications live in [`../backend/specs/`](../../backend/specs/README.md) (`domain/` for Layer 1; `api/` for Layer 2a/2b) so `backend` CI runs self-contained with zero cross-repo dependencies.
+- **Human Governance**: AI drafts rules with `Status: Draft`; only humans set `Status: Approved` and confirm `Origin` (replacing `observed`).
+- **Blind Test Generation**: Spec-backed tests live in `backend/<crate>/tests/<prefix>_*.rs` (public API + test fakes only) so tests verify intended behavior rather than copying bugs from implementation bodies.
+- **Automated Gate (`spec_traceability.rs`)**: Runs in `cargo test --workspace` and enforces 4 checks: (1) valid metadata, (2) blocks tests referencing `Draft` or `Deprecated` rules, (3) blocks `Approved` rules still marked `Origin: observed` or listed in `## Open Questions`, and (4) requires 1:1 test coverage for every `Approved` rule.
+
 

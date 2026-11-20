@@ -12,6 +12,9 @@ Welcome to the central documentation repository for **FamilyLedger**, a private,
 documentation/
 ├── README.md                          # Engineering index
 ├── README.ru.md                       # Описание для всей семьи простыми словами (Russian)
+├── AGENTS.md                          # AI Agent entry point, rules & skills index
+├── ai-development-guide.md            # Developer playbook: how to use skills for each task type
+├── .ai/                               # Cross-repo AI context, governance rules & 3 shared skills
 ├── architecture/
 │   ├── system-overview.md             # Cloud architecture, AWS services & EventBridge domain events
 │   ├── aurora-dsql.md                 # Aurora DSQL constraints, OCC, IAM & migration rules
@@ -25,8 +28,10 @@ documentation/
 │   ├── event-storming.md              # Domain events catalog, triggers & loan payment choreography
 │   └── ubiquitous-language.md         # Domain glossary, invariants & True Disposable Surplus formulas
 │
+├── research/                          # Phase 1 factual primary-source research spikes (behavior specs live in ../backend/specs/)
+│
 ├── decisions/                         # Architectural Decision Records (ADRs)
-│   ├── README.md                      # ADR index (0001–0018) & MADR template
+│   ├── README.md                      # ADR index (0001–0019) & MADR template
 │   ├── 0001-aurora-dsql-serverless-db.md   # ADR 0001: Amazon Aurora DSQL
 │   ├── 0002-keyset-pagination.md           # ADR 0002: Keyset Cursor Pagination
 │   ├── 0003-rust-ddd-clean-architecture.md # ADR 0003: Clean Architecture / DDD in Rust
@@ -44,7 +49,8 @@ documentation/
 │   ├── 0015-multi-currency-live-exchange-rates.md # ADR 0015: Multi-Currency & Dual-Amount Transfers
 │   ├── 0016-pluggable-exchange-rate-providers.md # ADR 0016: Pluggable FX Providers (BNM / ECB)
 │   ├── 0017-cdc-and-event-publishing-strategies.md # ADR 0017: Event Publishing Strategy (Direct EventBridge)
-│   └── 0018-ai-native-modular-platform-and-sdui.md # ADR 0018: AI-Native Modular Platform & SDUI
+│   ├── 0018-ai-native-modular-platform-and-sdui.md # ADR 0018: AI-Native Modular Platform & SDUI
+│   └── 0019-declarative-test-specifications.md # ADR 0019: Declarative Behavior Specs & AI Workflow
 │
 ├── roadmap/
 │   ├── business-plan.md               # MVP problem, solution, multi-currency scope & cost model
@@ -57,7 +63,7 @@ documentation/
 │       └── task_3_1_detailed_guide.md # Task 3.1 Aurora DSQL Migration Files guide
 │
 └── testing/
-    └── testing-strategy.md            # Test pyramid: Unit, Testcontainers PG, Axum, E2E
+    └── testing-strategy.md            # Test pyramid: Unit, Testcontainers PG, Axum, Spec Traceability
 ```
 
 ---

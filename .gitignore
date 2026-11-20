@@ -1,0 +1,5 @@
+# Local AI scratch & tokens
+.ai/local/
+
+# macOS
+.DS_Store
