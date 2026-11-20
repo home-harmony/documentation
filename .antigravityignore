@@ -1,0 +1,33 @@
+# Local AI scratch & defensive secret guards (keep .ai/context/, .ai/rules/, .ai/skills/, .agents/ visible)
+.ai/local/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local documentation preview / static-site build & archive outputs
+book/
+site/
+dist/
+.cache/
+node_modules/
+*.zip
+*.tar.gz
+
+# Optional: uncomment to exclude non-technical Russian overview from engineering context
+# README.ru.md
+
+# VCS, Markdown PKM, IDE & OS metadata
+.git/
+.obsidian/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+*.log
