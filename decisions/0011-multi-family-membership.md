@@ -47,7 +47,7 @@ Chosen option: **Option 3 — Global User Identity with `X-Family-Id` Context He
        pub family_id: FamilyId,
        pub role: Role,
        pub permissions: Vec<Permission>,
-       pub email: String,
+       pub email: Email,
    }
    ```
    The middleware extracts `user_id` from the JWT and `family_id` from `X-Family-Id`, then validates against `family_members`:

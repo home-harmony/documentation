@@ -43,7 +43,7 @@
 
 | Crate | Purpose | Allowed Dependencies | Invariants & Rules |
 | :--- | :--- | :--- | :--- |
-| **`domain`** | Pure business entities (`Family`, `FamilyMember`, `InviteToken`), value objects (`Money`, `CurrencyCode`, `FamilyName`, `DisplayName`, `Role`, `Permission`, typed IDs), domain events, domain errors, and debt repayment algorithms. | `rust_decimal`, `uuid`, `chrono`, `serde`, `serde_json`, `nutype`, `thiserror` | **STRICT ZERO I/O**: Never import `sqlx`, `tokio`, `axum`, `reqwest`, `aws-sdk-*`, or filesystem APIs. |
+| **`domain`** | Pure business entities (`Family`, `FamilyMember`, `InviteToken`), value objects (`Money`, `CurrencyCode`, `FamilyName`, `DisplayName`, `Email`, `Relationship`, `InviteTtl`, `Role`, `Permission`, typed IDs), domain events, domain errors, and debt repayment algorithms. | `rust_decimal`, `uuid`, `chrono`, `serde`, `serde_json`, `nutype`, `thiserror` | **STRICT ZERO I/O**: Never import `sqlx`, `tokio`, `axum`, `reqwest`, `aws-sdk-*`, or filesystem APIs. |
 | **`infrastructure`** | Database access (Aurora DSQL via SQLx), keyset pagination, EventBridge publisher, BNM/ECB exchange rate fetcher, Testcontainers setup. | `domain`, `sqlx`, `aurora-dsql-sqlx-connector`, `tokio`, `serde`, `serde_json`, `rust_decimal`, `uuid`, `chrono`, `thiserror`, `anyhow`, `base64`, `tracing` | Implements domain repository traits; handles OCC retry logic and IAM token refresh. |
 | **`api`** | Common web concerns: `ApiError` responses, `AuthClaims` extraction (`user_id` from JWT, `family_id` from verified `X-Family-Id` membership), standard JSON helpers (`ok`, `created`, `no_content`). | `domain`, `axum`, `lambda_http`, `tower`, `tower-http`, `jsonwebtoken`, `tokio`, `serde`, `serde_json`, `uuid`, `chrono`, `thiserror`, `tracing` | Extracts authenticated context from HTTP requests and delegates to application use-cases. |
 | **`lambdas/*`** | Standalone executables compiled for AWS Lambda (ARM64 / Graviton). | `domain`, `infrastructure`, `api`, `lambda_runtime`, `lambda_http`, `tokio`, `sqlx`, `anyhow`, `tracing*` | Thin composition roots that wire together pools, repositories, config, and invoke use-cases. |
@@ -72,9 +72,12 @@ backend/
 │           ├── mod.rs
 │           ├── currency_code.rs
 │           ├── display_name.rs
+│           ├── email.rs
 │           ├── family_name.rs
 │           ├── ids.rs
+│           ├── invite_ttl.rs
 │           ├── money.rs
+│           ├── relationship.rs
 │           └── role.rs
 ├── infrastructure/
 │   ├── Cargo.toml
@@ -164,9 +167,12 @@ unwrap_used = "deny"
 * **`Cargo.toml`**: inherits `version.workspace = true`, `edition.workspace = true`, `license.workspace = true`, `[lints] workspace = true`, and zero-I/O dependencies (`rust_decimal`, `uuid`, `chrono`, `serde`, `serde_json`, `thiserror`, `nutype`; dev-dep `rust_decimal_macros`).
 * **`src/lib.rs`**: exports `entities`, `errors`, `events`, and `value_objects`.
 * **Value Objects**:
-  * `CurrencyCode` (3 uppercase ASCII letters)
+  * `CurrencyCode` (3 uppercase ASCII letters via `nutype`)
+  * `Email` (trimmed, lowercased, validated email address via `nutype`)
   * `FamilyName` (trimmed, non-empty, max 200 chars via `nutype`)
   * `DisplayName` (trimmed, non-empty, max 100 chars via `nutype`)
+  * `Relationship` (trimmed, non-empty, max 50 chars via `nutype`)
+  * `InviteTtl` (strictly positive invite expiration duration in seconds via `nutype`)
   * `Money` (`rust_decimal::Decimal` + `CurrencyCode`, currency-safe arithmetic)
   * `Role` (`Owner`, `Member`, `Child`, `Other`) & `Permission` (8 capability flags)
   * Strongly-typed UUID v4 / v7 newtypes in `ids.rs` (`FamilyId`, `MemberId`, `UserId`, `InviteTokenId`, `TransactionId`, etc.)
@@ -190,7 +196,7 @@ unwrap_used = "deny"
 
 * **`Cargo.toml`**: inherits workspace metadata and `[lints] workspace = true`.
 * **`src/lib.rs`**: exports `pub mod auth; pub mod errors; pub mod response;`.
-* **`src/auth.rs`**: `AuthClaims` (`user_id: UserId`, `family_id: FamilyId`, `role: Role`, `permissions: Vec<Permission>`, `email: String`) Axum extractor + `AuthError`.
+* **`src/auth.rs`**: `AuthClaims` (`user_id: UserId`, `family_id: FamilyId`, `role: Role`, `permissions: Vec<Permission>`, `email: Email`) Axum extractor + `AuthError`.
 * **`src/errors.rs`**: `ApiError` JSON body and `domain_error_response(DomainError) -> Response`.
 * **`src/response.rs`**: `ok`, `created`, and `no_content` JSON helpers.
 
