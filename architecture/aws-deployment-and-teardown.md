@@ -58,6 +58,7 @@ flowchart TD
 | **SAM: `familyledger-data-dev`** (`Task 1.2`) | `FamilyLedgerEventBus` (`familyledger-events-dev`) | `AWS::Events::EventBus` | Custom domain event bus; replaces Kinesis Data Stream ([`ADR-0017`](../decisions/0017-cdc-and-event-publishing-strategies.md)) | **$0.00** |
 | **SAM: `familyledger-data-dev`** (`Task 1.2`) | `FamilyLedgerServiceRole` (`familyledger-service-role-dev`) | `AWS::IAM::Role` | Microservice Lambda role: `dsql:DbConnect` + `events:PutEvents` | **$0.00** |
 | **SAM: `familyledger-data-dev`** (`Task 1.2`) | `FamilyLedgerMigrationRunnerRole` (`familyledger-migration-runner-role-dev`) | `AWS::IAM::Role` | Migration Runner role: `dsql:DbConnect` + `dsql:DbConnectAdmin` | **$0.00** |
+| **SAM: `familyledger-data-dev`** (`Task 4.1`) | `FamilyLedgerMigrateRunnerFunction` (`familyledger-migrate-dev`) | `AWS::Serverless::Function` | ARM64 Rust Lambda (`provided.al2023`) applying embedded Aurora DSQL migrations & awaiting `CREATE INDEX ASYNC` jobs | **$0.00** |
 | **SAM CLI Managed** | `aws-sam-cli-managed-default` | CloudFormation Stack + S3 Bucket | Auto-created by SAM (`resolve_s3 = true`) to stage CloudFormation templates | **$0.00** |
 
 ---
@@ -180,17 +181,23 @@ sam deploy `
 
 ---
 
-### Step 3: Deploy the Data & Event Bus Stack (`familyledger-data-dev`)
+### Step 3: Build `migrate_runner` & Deploy the Data & Event Bus Stack (`familyledger-data-dev`)
 
-Provisions the custom EventBridge bus (`familyledger-events-dev`) and least-privilege IAM roles (`familyledger-service-role-dev`, `familyledger-migration-runner-role-dev`) scoped to your Aurora DSQL cluster ARN.
+Compiles the ARM64 Rust Migration Runner binary (`target/lambda/migrate_runner/bootstrap`) and provisions the custom EventBridge bus (`familyledger-events-dev`), least-privilege IAM roles (`familyledger-service-role-dev`, `familyledger-migration-runner-role-dev`), and the `familyledger-migrate-dev` Lambda function scoped to your Aurora DSQL cluster ARN.
+
+> [!NOTE]
+> **Cross-Compilation Toolchain Requirement (Windows)**: Ensure `cargo-lambda >= 1.9.2` and `zig >= 0.17.1` are installed (`scoop update cargo-lambda zig`).
 
 ```powershell
-cd c:\Users\demiu\my-rust-projects\home-harmony\backend\infrastructure\sam
+# 1. Build the ARM64 Migration Runner Lambda binary
+cd c:\Users\demiu\my-rust-projects\home-harmony\backend
+cargo lambda build --release --arm64 --package migrate_runner
 
-# 1. Validate the data & event template
+# 2. Validate the data & event template
+cd c:\Users\demiu\my-rust-projects\home-harmony\backend\infrastructure\sam
 sam validate -t data-stream-template.yaml --lint
 
-# 2. Deploy familyledger-data-dev (passing your active DSQL cluster ID)
+# 3. Deploy familyledger-data-dev (passing your active DSQL cluster ID)
 sam deploy `
   --template-file data-stream-template.yaml `
   --config-file samconfig-data.toml `
@@ -201,7 +208,35 @@ sam deploy `
 
 ---
 
-### Step 4: Synchronize Outputs to `backend/.env.dev` & Verify
+### Step 4: Invoke the Migration Runner Lambda & Verify Schema on Aurora DSQL
+
+Trigger `familyledger-migrate-dev` to apply all pending embedded SQL migrations (`backend/migrations/*.sql`) and wait for all `CREATE INDEX ASYNC` background jobs to finish via `CALL sys.wait_for_job`:
+
+```powershell
+cd c:\Users\demiu\my-rust-projects\home-harmony\backend
+
+# 1. Invoke the migration runner (default payload '{}' waits for async index jobs)
+aws lambda invoke `
+  --function-name familyledger-migrate-dev `
+  --region us-east-1 `
+  --log-type Tail `
+  --cli-binary-format raw-in-base64-out `
+  --payload '{}' `
+  target\migrate-response.json
+
+# 2. Inspect response payload
+Get-Content target\migrate-response.json
+# Expected first run:  {"message":"Schema migrations completed successfully","total_migrations":34,"applied_now":34,"already_applied":0,"active_async_jobs":0}
+# Expected re-run:     {"message":"Schema migrations completed successfully","total_migrations":34,"applied_now":0,"already_applied":34,"active_async_jobs":0}
+
+Remove-Item target\migrate-response.json -Force
+```
+
+*(Optional: To decode the base64 `LogResult` directly in PowerShell when troubleshooting a migration failure, append `--query 'LogResult' --output text | ForEach-Object { [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($_)) }` to `aws lambda invoke`.)*
+
+---
+
+### Step 5: Synchronize Outputs to `backend/.env.dev` & Verify
 
 Query the CloudFormation stack outputs and update `backend/.env.dev` (using `backend/.env.example` as template):
 

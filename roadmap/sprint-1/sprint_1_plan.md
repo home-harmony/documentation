@@ -204,22 +204,31 @@ async fn handler(event: LambdaEvent<Request>) -> Result<Response, Error> {
 
 ### Phase 5: Testing, Local Validation & Deployment (Day 10)
 
-#### Task 5.1: Local Integration Testing Setup — ✅ IMPLEMENTED (Run with Docker)
+#### Task 5.1: Local Integration Testing Setup — ✅ COMPLETED
 * **Objective**: Validate all 34 migrations offline (`infrastructure/tests/migration_invariants.rs`) and against PostgreSQL 16 via Testcontainers (`infrastructure/tests/migrations_pg.rs`).
 * **Details**:
   * `infrastructure::db::migrations::run_postgres_migrations` strips `ASYNC` from `CREATE INDEX ASYNC` in memory so PG 16 executes all 34 files cleanly from the same source of truth.
-  * Run with Docker active: `cargo test -p infrastructure -- --ignored`.
+  * Offline invariants run on every `cargo test --workspace` (`cargo test -p infrastructure --test migration_invariants`).
+  * Live PostgreSQL 16 Testcontainers suite runs with Docker active: `cargo test -p infrastructure -- --ignored`.
 
-#### Task 5.2: Compilation & Deploy
-* **Objective**: Compile the Rust binary and deploy the CloudFormation/SAM stack.
-* **Details**:
-  * Execute `cargo lambda build --release --arm64 --package migrate_runner` to compile the migration runner.
-  * Validate and deploy `familyledger-data-dev` (`cd backend/infrastructure/sam && sam validate -t data-stream-template.yaml --lint && sam deploy --config-file samconfig-data.toml`).
-  * Trigger the `familyledger-migrate-dev` Lambda function (`aws lambda invoke --function-name familyledger-migrate-dev --payload '{}' response.json`).
-  * Check AWS CloudWatch logs to verify database connectivity, `applied_now`/`already_applied` counts, and `active_async_jobs == 0`.
-  * Verify background index creation status via SQL Client if `wait_for_indexes` was `false`:
+#### Task 5.2: Compilation & Deploy — ✅ COMPLETED
+* **Objective**: Compile the Rust binary and deploy the CloudFormation/SAM stack, then execute and verify all 34 schema migrations on AWS Aurora DSQL.
+* **Actions Performed & Key Technical Fixes**:
+  * **Cross-Compilation Toolchain (`cargo-lambda` & `zig`)**: Upgraded Scoop `cargo-lambda` (`1.0.0` $\rightarrow$ `1.9.2`) and `zig` (`0.11.0` $\rightarrow$ `0.17.1`) so Rust 1.100 cross-compiles `aarch64-unknown-linux-gnu` (`aws-lc-sys` + `ring`) without missing `ar` archiver or `--fix-cortex-a53-843419` linker errors.
+  * **Aurora DSQL `BEGIN READ ONLY` Transaction Compatibility**: Live execution on Aurora DSQL revealed that `pool.begin()` (`BEGIN`) followed by `SET TRANSACTION READ ONLY` is rejected by DSQL (`setting configuration parameter "TRANSACTION" not supported`). Updated `count_applied_migrations` and `query_pending_async_jobs` in `infrastructure::db::migrations` to start read-only transactions directly via `pool.begin_with("BEGIN READ ONLY")` (compatible with both Aurora DSQL and PostgreSQL 16).
+  * **ARM64 Build**: Compiled `target/lambda/migrate_runner/bootstrap` via `cargo lambda build --release --arm64 --package migrate_runner`.
+  * **SAM Deploy**: Validated and deployed `familyledger-data-dev` (`cd backend/infrastructure/sam && sam validate -t data-stream-template.yaml --lint && sam deploy --template-file data-stream-template.yaml --config-file samconfig-data.toml --capabilities CAPABILITY_NAMED_IAM --no-confirm-changeset`), provisioning `FamilyLedgerMigrateRunnerFunction` (`familyledger-migrate-dev`).
+  * **AWS Execution & Idempotency Verification**:
+    * **First Invocation (Initial Schema + Async Indexes)**:
+      ```powershell
+      aws lambda invoke --function-name familyledger-migrate-dev --region us-east-1 --log-type Tail --cli-binary-format raw-in-base64-out --payload '{}' target\migrate-response.json
+      ```
+      Returned `{"message":"Schema migrations completed successfully","total_migrations":34,"applied_now":34,"already_applied":0,"active_async_jobs":0}` (`Duration: 34.89s`; all 18 tables created and all 16 `CREATE INDEX ASYNC` jobs waited via `CALL sys.wait_for_job` and succeeded).
+    * **Second Invocation (Idempotency Check)**:
+      Returned `{"message":"Schema migrations completed successfully","total_migrations":34,"applied_now":0,"already_applied":34,"active_async_jobs":0}`.
+  * **Manual `sys.jobs` Inspection** (if invoked with `{"wait_for_indexes": false}`):
     ```sql
-    SELECT * FROM sys.jobs WHERE LOWER(status) IN ('submitted', 'processing', 'failed');
+    SELECT * FROM sys.jobs WHERE LOWER(status) IN ('submitted', 'processing', 'running', 'failed');
     ```
 
 ---
@@ -229,5 +238,5 @@ async fn handler(event: LambdaEvent<Request>) -> Result<Response, Error> {
 - [x] EventBridge bus and least-privilege IAM roles are configured (`$0.00` idle cost; Kinesis disabled/removed per ADR-0017).
 - [x] Rust Cargo workspace, all 34 SQL migrations, `infrastructure::db::migrations`, and `migrate_runner` Lambda compile cleanly with zero warnings/errors.
 - [x] Local database migration checks run successfully against PostgreSQL 16 (`cargo test -p infrastructure -- --ignored` with Docker active).
-- [ ] The Migration Runner Lambda compiles with `cargo-lambda`, deploys via SAM, and executes successfully on AWS.
-- [ ] Live Aurora DSQL cluster contains all **18 schema tables** and **16 asynchronous indexes** (34 migrations total) verified via active schema checks.
+- [x] The Migration Runner Lambda compiles with `cargo-lambda`, deploys via SAM, and executes successfully on AWS.
+- [x] Live Aurora DSQL cluster contains all **18 schema tables** and **16 asynchronous indexes** (34 migrations total) verified via active schema checks.

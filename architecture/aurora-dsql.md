@@ -95,13 +95,16 @@ pub async fn save_transaction_with_retry(
 ```
 
 ### 3.3 Read-Only Optimization
+
+> [!IMPORTANT]
+> **Aurora DSQL Read-Only Transaction Syntax**: Aurora DSQL does **not** support `SET TRANSACTION READ ONLY` after `BEGIN;` (it fails with `setting configuration parameter "TRANSACTION" not supported`). Always start read-only transactions directly with **`pool.begin_with("BEGIN READ ONLY")`** (which works on both Aurora DSQL and standard PostgreSQL 16).
+
 ```rust
 pub async fn list_transactions_read_only(
     pool: &PgPool,
     family_id: Uuid,
 ) -> Result<Vec<TransactionRow>, sqlx::Error> {
-    let mut tx = pool.begin().await?;
-    sqlx::query!("SET TRANSACTION READ ONLY").execute(&mut *tx).await?;
+    let mut tx = pool.begin_with("BEGIN READ ONLY").await?;
     
     let rows = sqlx::query_as!(
         TransactionRow,

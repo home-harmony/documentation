@@ -469,16 +469,62 @@ All 34 files live in `backend/migrations/` (`mkdir -p backend/migrations`).
 Each file listed in Section 3 lives under `backend/migrations/` with `-- no-transaction` on line 1 and `IF NOT EXISTS` on every `CREATE TABLE` / `CREATE INDEX ASYNC`.
 
 ### Step 3: Verify Migration Invariants & Run Against PostgreSQL 16 (Testcontainers)
-Offline structural checks run automatically with `cargo test --workspace` (`infrastructure/tests/migration_invariants.rs`).
-With Docker running, execute the Layer 2a Testcontainers PG 16 test suite (which strips `ASYNC` from `CREATE INDEX ASYNC` in memory via `infrastructure::db::migrations::run_postgres_migrations` while keeping `backend/migrations/*.sql` Aurora DSQL-native):
-```bash
-cd backend
-cargo test -p infrastructure -- --ignored
-```
+1. **Offline Structural & Invariant Checks** (no Docker or DB required):
+   ```powershell
+   cd backend
+   cargo test -p infrastructure --test migration_invariants
+   ```
+   Verifies that all 34 `.sql` files exist, start with `-- no-transaction`, contain exactly 1 DDL statement with `IF NOT EXISTS`, contain zero DML or banned tokens (`SERIAL`, `TRUNCATE`, `ASC`/`DESC` in index DDL), and rewrite cleanly for PostgreSQL 16.
+2. **PostgreSQL 16 Integration Test via Testcontainers** (requires Docker Desktop running):
+   ```powershell
+   cd backend
+   cargo test -p infrastructure -- --ignored
+   ```
+   Spins up `postgres:16-alpine`, runs `infrastructure::db::migrations::run_postgres_migrations` twice (verifying `applied_now == 34` on first run and `already_applied == 34` on second run), asserts all 18 tables and 16 indexes exist in `information_schema` / `pg_indexes`, and verifies foreign-key and `CHECK` constraints.
 
-### Step 4: Generate SQLx Offline Query Cache (Sprint 2+)
-Once compile-time checked `sqlx::query!` macros are added in repository adapters:
-```bash
+### Step 4: Build, Deploy & Invoke the Migration Runner Lambda on AWS Aurora DSQL
+> [!IMPORTANT]
+> **Cross-Compilation Prerequisites (Windows)**: Ensure `cargo-lambda >= 1.9.2` and `zig >= 0.17.1` are installed (`scoop update cargo-lambda zig`). Older `cargo-lambda 1.0.0` / `zig 0.11.0` fail when cross-compiling Rust 1.100 for `aarch64-unknown-linux-gnu` (`aws-lc-sys` missing `ar` and unsupported `--fix-cortex-a53-843419` linker flag).
+
+1. **Compile `migrate_runner` for ARM64 Lambda** (outputs `backend/target/lambda/migrate_runner/bootstrap`):
+   ```powershell
+   cd backend
+   cargo lambda build --release --arm64 --package migrate_runner
+   ```
+2. **Validate & Deploy `familyledger-data-dev` via AWS SAM**:
+   ```powershell
+   cd backend\infrastructure\sam
+   sam validate -t data-stream-template.yaml --lint
+   sam deploy `
+     --template-file data-stream-template.yaml `
+     --config-file samconfig-data.toml `
+     --capabilities CAPABILITY_NAMED_IAM `
+     --no-confirm-changeset
+   ```
+3. **Invoke `familyledger-migrate-dev` on AWS (with Tail Logs)**:
+   ```powershell
+   cd ..\..
+   aws lambda invoke `
+     --function-name familyledger-migrate-dev `
+     --region us-east-1 `
+     --log-type Tail `
+     --cli-binary-format raw-in-base64-out `
+     --payload '{}' `
+     target\migrate-response.json
+
+   Get-Content target\migrate-response.json
+   Remove-Item target\migrate-response.json -Force
+   ```
+   - Default payload `'{}'` sets `wait_for_indexes: true`, which waits for all background `CREATE INDEX ASYNC` jobs via `CALL sys.wait_for_job(job_id)` before returning.
+   - Expected initial response:
+     `{"message":"Schema migrations completed successfully","total_migrations":34,"applied_now":34,"already_applied":0,"active_async_jobs":0}`
+   - Expected subsequent (idempotent) response:
+     `{"message":"Schema migrations completed successfully","total_migrations":34,"applied_now":0,"already_applied":34,"active_async_jobs":0}`
+   - To skip waiting for background index builds during invocation, pass `--payload '{"wait_for_indexes":false}'`.
+
+### Step 5: Generate SQLx Offline Query Cache (Sprint 2+)
+Once compile-time checked `sqlx::query!` macros are added in repository adapters (note: install the CLI first via `cargo install sqlx-cli@0.9.0 --no-default-features --features postgres,rustls`):
+```powershell
 cd backend
 cargo sqlx prepare -- --all-targets
 ```
