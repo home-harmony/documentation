@@ -493,6 +493,6 @@ cargo sqlx prepare -- --all-targets
 - [x] All tables define `UUID PRIMARY KEY DEFAULT gen_random_uuid()` (UUID v4 tables use the default or `Uuid::new_v4()`, while UUID v7 time-series tables receive `Uuid::now_v7()` from the Rust domain layer).
 - [x] All indexes use `CREATE INDEX ASYNC IF NOT EXISTS`.
 - [x] Foreign key constraints (`REFERENCES`) are present and valid across all related tables (`family_invite_tokens.role` excludes `'owner'`).
-- [ ] `cargo test -p infrastructure -- --ignored` applies all 34 migrations cleanly against PG 16 via Testcontainers (requires Docker running).
+- [x] `cargo test -p infrastructure -- --ignored` applies all 34 migrations cleanly against PG 16 via Testcontainers (requires Docker running).
 - [ ] `cargo sqlx prepare -- --all-targets` runs once compile-time `sqlx::query!` adapters land in Sprint 2.
 
