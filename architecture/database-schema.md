@@ -341,7 +341,7 @@ CREATE TABLE exchange_rates (
 
 ## 2. Asynchronous Indexes (16 Indexes)
 
-Indexes are created asynchronously via `CREATE INDEX ASYNC` to respect Aurora DSQL rules:
+Indexes are created asynchronously via `CREATE INDEX ASYNC` to respect Aurora DSQL rules (explicit `ASC`/`DESC` sort modifiers are omitted because Aurora DSQL index definitions do not support them; the planner uses backward index scans for `ORDER BY ... DESC`):
 
 ```sql
 -- 1. Family Members
@@ -354,25 +354,25 @@ CREATE INDEX ASYNC idx_accounts_family ON payment_accounts (family_id);
 CREATE INDEX ASYNC idx_balance_snapshots_account ON account_balance_snapshots (account_id, year_month);
 
 -- 4. Ledger Transactions
-CREATE INDEX ASYNC idx_tx_family_time ON ledger_transactions (family_id, occurred_at DESC, id DESC);
-CREATE INDEX ASYNC idx_tx_account_src ON ledger_transactions (source_account_id, occurred_at DESC);
-CREATE INDEX ASYNC idx_tx_account_dst ON ledger_transactions (destination_account_id, occurred_at DESC);
+CREATE INDEX ASYNC idx_tx_family_time ON ledger_transactions (family_id, occurred_at, id);
+CREATE INDEX ASYNC idx_tx_account_src ON ledger_transactions (source_account_id, occurred_at);
+CREATE INDEX ASYNC idx_tx_account_dst ON ledger_transactions (destination_account_id, occurred_at);
 
 -- 5. Debt Loans & Payments
 CREATE INDEX ASYNC idx_loan_kinds_family ON debt_loan_kinds (family_id);
 CREATE INDEX ASYNC idx_loans_family ON debt_loans (family_id, status);
-CREATE INDEX ASYNC idx_loan_payments ON debt_loan_payments (loan_id, paid_at DESC);
+CREATE INDEX ASYNC idx_loan_payments ON debt_loan_payments (loan_id, paid_at);
 
 -- 6. Recurring Payments
 CREATE INDEX ASYNC idx_recurring_family ON recurring_payments (family_id, is_active);
 CREATE INDEX ASYNC idx_recurring_due ON recurring_payments (next_due_date) WHERE is_active = true;
 CREATE INDEX ASYNC idx_recurring_linked_loan ON recurring_payments (linked_loan_id) WHERE linked_loan_id IS NOT NULL;
-CREATE INDEX ASYNC idx_recurring_records ON recurring_payment_records (recurring_payment_id, paid_at DESC);
+CREATE INDEX ASYNC idx_recurring_records ON recurring_payment_records (recurring_payment_id, paid_at);
 
 -- 7. Savings Goals
 CREATE INDEX ASYNC idx_goals_family ON planning_savings_goals (family_id, status);
-CREATE INDEX ASYNC idx_goal_contributions ON goal_contributions (goal_id, contributed_at DESC);
+CREATE INDEX ASYNC idx_goal_contributions ON goal_contributions (goal_id, contributed_at);
 
 -- 8. Exchange Rates
-CREATE INDEX ASYNC idx_exchange_rates ON exchange_rates (base_currency, quote_currency, fetched_at DESC);
+CREATE INDEX ASYNC idx_exchange_rates ON exchange_rates (base_currency, quote_currency, fetched_at);
 ```

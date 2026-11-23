@@ -13,12 +13,16 @@ Before creating any SQL files, review the strict constraints governing Amazon Au
 │ Aurora DSQL Constraint                │ Mandatory Implementation Strategy                                     │
 ├───────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤
 │ 1 DDL Statement Per File              │ Exactly 1 DDL statement per .sql file. Never combine multiple DDLs.    │
+│ Autocommit Bookkeeping (`no-tx`)      │ Start every file with `-- no-transaction` on line 1 so DDL & SQLx      │
+│                                       │ `_sqlx_migrations` DML never share a transaction.                      │
+│ Idempotent DDL Statements             │ Use `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX ASYNC IF NOT EXISTS`.│
 │ No Mixed DDL + DML                    │ Never put INSERT/UPDATE statements in table creation migration files.  │
 │ Asynchronous Indexes                  │ Always use CREATE INDEX ASYNC in dedicated individual migration files. │
 │ Primary Key Versioning (RFC 9562)     │ UUID v4 for security tokens & low-volume roots; UUID v7 for logs/times.│
 │ Foreign Key Referential Integrity     │ Use FOREIGN KEY (col) REFERENCES parent(id) across all tables.        │
 │ Semi-Structured Attributes            │ Store as native JSONB with default '[]'::jsonb or '{}'::jsonb.         │
-│ Keyset (Cursor) Pagination Alignment  │ Composite indexes ordered by (occurred_at DESC) for stable pagination. │
+│ Keyset (Cursor) Pagination Alignment  │ Composite indexes on `(occurred_at, id)` / `(paid_at)` — DSQL omits   │
+│                                       │ `ASC`/`DESC` in index DDL and uses backward index scans for `DESC`.    │
 │ Soft-Deletes Everywhere               │ deleted_at TIMESTAMPTZ NULL on all business-critical entities.         │
 └───────────────────────────────────────┴────────────────────────────────────────────────────────────────────────┘
 ```
@@ -105,7 +109,7 @@ CREATE TABLE family_members (
 CREATE TABLE family_invite_tokens (
   token           UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id       UUID          NOT NULL REFERENCES family_families(id),
-  role            VARCHAR(10)   NOT NULL CHECK (role IN ('owner','member','child','other')),
+  role            VARCHAR(10)   NOT NULL CHECK (role IN ('member','child','other')),
   permissions     JSONB         NOT NULL DEFAULT '[]'::jsonb,
   relationship    VARCHAR(50),
   created_by      UUID          NOT NULL REFERENCES family_members(id),
@@ -391,17 +395,17 @@ CREATE INDEX ASYNC idx_balance_snapshots_account ON account_balance_snapshots (a
 
 #### `20260616000022_idx_tx_family_time.sql`
 ```sql
-CREATE INDEX ASYNC idx_tx_family_time ON ledger_transactions (family_id, occurred_at DESC, id DESC);
+CREATE INDEX ASYNC idx_tx_family_time ON ledger_transactions (family_id, occurred_at, id);
 ```
 
 #### `20260616000023_idx_tx_account_src.sql`
 ```sql
-CREATE INDEX ASYNC idx_tx_account_src ON ledger_transactions (source_account_id, occurred_at DESC);
+CREATE INDEX ASYNC idx_tx_account_src ON ledger_transactions (source_account_id, occurred_at);
 ```
 
 #### `20260616000024_idx_tx_account_dst.sql`
 ```sql
-CREATE INDEX ASYNC idx_tx_account_dst ON ledger_transactions (destination_account_id, occurred_at DESC);
+CREATE INDEX ASYNC idx_tx_account_dst ON ledger_transactions (destination_account_id, occurred_at);
 ```
 
 #### `20260616000025_idx_loan_kinds_family.sql`
@@ -416,7 +420,7 @@ CREATE INDEX ASYNC idx_loans_family ON debt_loans (family_id, status);
 
 #### `20260616000027_idx_loan_payments.sql`
 ```sql
-CREATE INDEX ASYNC idx_loan_payments ON debt_loan_payments (loan_id, paid_at DESC);
+CREATE INDEX ASYNC idx_loan_payments ON debt_loan_payments (loan_id, paid_at);
 ```
 
 #### `20260616000028_idx_recurring_family.sql`
@@ -436,7 +440,7 @@ CREATE INDEX ASYNC idx_recurring_linked_loan ON recurring_payments (linked_loan_
 
 #### `20260616000031_idx_recurring_records.sql`
 ```sql
-CREATE INDEX ASYNC idx_recurring_records ON recurring_payment_records (recurring_payment_id, paid_at DESC);
+CREATE INDEX ASYNC idx_recurring_records ON recurring_payment_records (recurring_payment_id, paid_at);
 ```
 
 #### `20260616000032_idx_goals_family.sql`
@@ -446,40 +450,35 @@ CREATE INDEX ASYNC idx_goals_family ON planning_savings_goals (family_id, status
 
 #### `20260616000033_idx_goal_contributions.sql`
 ```sql
-CREATE INDEX ASYNC idx_goal_contributions ON goal_contributions (goal_id, contributed_at DESC);
+CREATE INDEX ASYNC idx_goal_contributions ON goal_contributions (goal_id, contributed_at);
 ```
 
 #### `20260616000034_idx_exchange_rates.sql`
 ```sql
-CREATE INDEX ASYNC idx_exchange_rates ON exchange_rates (base_currency, quote_currency, fetched_at DESC);
+CREATE INDEX ASYNC idx_exchange_rates ON exchange_rates (base_currency, quote_currency, fetched_at);
 ```
 
 ---
 
 ## 4. Step-by-Step Implementation & Verification Guide
 
-### Step 1: Create the `backend/migrations/` Directory
-```powershell
-# Run from workspace root
-New-Item -ItemType Directory -Force -Path "backend/migrations"
+### Step 1: Verify `backend/migrations/` Directory
+All 34 files live in `backend/migrations/` (`mkdir -p backend/migrations`).
+
+### Step 2: Author All 34 Migration Files
+Each file listed in Section 3 lives under `backend/migrations/` with `-- no-transaction` on line 1 and `IF NOT EXISTS` on every `CREATE TABLE` / `CREATE INDEX ASYNC`.
+
+### Step 3: Verify Migration Invariants & Run Against PostgreSQL 16 (Testcontainers)
+Offline structural checks run automatically with `cargo test --workspace` (`infrastructure/tests/migration_invariants.rs`).
+With Docker running, execute the Layer 2a Testcontainers PG 16 test suite (which strips `ASYNC` from `CREATE INDEX ASYNC` in memory via `infrastructure::db::migrations::run_postgres_migrations` while keeping `backend/migrations/*.sql` Aurora DSQL-native):
+```bash
+cd backend
+cargo test -p infrastructure -- --ignored
 ```
 
-### Step 2: Generate All 34 Migration Files
-Create each file listed in Section 3 under `backend/migrations/`.
-
-### Step 3: Run Database Migrations via SQLx
-Ensure Docker or local PostgreSQL is running:
-```powershell
-# Set DATABASE_URL for local development
-$env:DATABASE_URL = "postgres://postgres:postgres@localhost:5432/familyledger"
-
-# Run all migrations
-sqlx migrate run --source backend/migrations
-```
-
-### Step 4: Generate SQLx Offline Query Cache
-To ensure CI and build targets can verify SQL queries compile-time without a live database:
-```powershell
+### Step 4: Generate SQLx Offline Query Cache (Sprint 2+)
+Once compile-time checked `sqlx::query!` macros are added in repository adapters:
+```bash
 cd backend
 cargo sqlx prepare -- --all-targets
 ```
@@ -488,12 +487,12 @@ cargo sqlx prepare -- --all-targets
 
 ## 5. Acceptance Criteria & Definition of Done
 
-- [ ] Exactly 34 migration files exist in `backend/migrations/`.
-- [ ] Every file contains **exactly one DDL statement**.
-- [ ] No DML (`INSERT`, `UPDATE`) is present in any migration file.
-- [ ] All tables define `UUID PRIMARY KEY DEFAULT gen_random_uuid()` (UUID v4 tables use the default or `Uuid::new_v4()`, while UUID v7 time-series tables receive `Uuid::now_v7()` from the Rust domain layer).
-- [ ] All indexes use `CREATE INDEX ASYNC`.
-- [ ] Foreign key constraints (`REFERENCES`) are present and valid across all related tables.
-- [ ] `sqlx migrate run` applies all 34 migrations in order without error.
-- [ ] `cargo sqlx prepare -- --all-targets` runs and generates `.sqlx/` cache cleanly.
+- [x] Exactly 34 migration files exist in `backend/migrations/`.
+- [x] Every file starts with `-- no-transaction` and contains **exactly one DDL statement** (`IF NOT EXISTS`).
+- [x] No DML (`INSERT`, `UPDATE`, `DELETE`) is present in any migration file.
+- [x] All tables define `UUID PRIMARY KEY DEFAULT gen_random_uuid()` (UUID v4 tables use the default or `Uuid::new_v4()`, while UUID v7 time-series tables receive `Uuid::now_v7()` from the Rust domain layer).
+- [x] All indexes use `CREATE INDEX ASYNC IF NOT EXISTS`.
+- [x] Foreign key constraints (`REFERENCES`) are present and valid across all related tables (`family_invite_tokens.role` excludes `'owner'`).
+- [ ] `cargo test -p infrastructure -- --ignored` applies all 34 migrations cleanly against PG 16 via Testcontainers (requires Docker running).
+- [ ] `cargo sqlx prepare -- --all-targets` runs once compile-time `sqlx::query!` adapters land in Sprint 2.
 
