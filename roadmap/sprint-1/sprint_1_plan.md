@@ -228,6 +228,6 @@ async fn handler(event: LambdaEvent<Request>) -> Result<Response, Error> {
 - [x] AWS infrastructure templates (Cognito, API Gateway, S3, CloudFront, Aurora DSQL, EventBridge, IAM, `FamilyLedgerMigrateRunnerFunction`) are defined and wired.
 - [x] EventBridge bus and least-privilege IAM roles are configured (`$0.00` idle cost; Kinesis disabled/removed per ADR-0017).
 - [x] Rust Cargo workspace, all 34 SQL migrations, `infrastructure::db::migrations`, and `migrate_runner` Lambda compile cleanly with zero warnings/errors.
-- [ ] Local database migration checks run successfully against PostgreSQL 16 (`cargo test -p infrastructure -- --ignored` with Docker active).
+- [x] Local database migration checks run successfully against PostgreSQL 16 (`cargo test -p infrastructure -- --ignored` with Docker active).
 - [ ] The Migration Runner Lambda compiles with `cargo-lambda`, deploys via SAM, and executes successfully on AWS.
 - [ ] Live Aurora DSQL cluster contains all **18 schema tables** and **16 asynchronous indexes** (34 migrations total) verified via active schema checks.
