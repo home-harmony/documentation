@@ -31,7 +31,7 @@ The finalized Sprint 1 schema consists of **18 tables and 16 asynchronous indexe
 | Role & Permission Model | 4 system roles (`Owner`, `Member`, `Child`, `Other`) with `Permission` JSONB flags on `family_members` and `family_invite_tokens` (used for `Role::Other`). |
 | `budget_monthly_budgets.status` | `CHECK (status IN ('draft','active'))` — `'closed'` removed across schema, API, and ADRs. |
 | `budget_envelopes.spent_value` | Omitted from `budget_envelopes`; computed dynamically via `SUM(ledger_transactions)` at read time. |
-| `ledger_transactions` pagination index | `idx_tx_family_time ON ledger_transactions (family_id, occurred_at DESC, id DESC)`. |
+| `ledger_transactions` pagination index | `idx_tx_family_time ON ledger_transactions (family_id, occurred_at, id)` (DSQL uses backward scan for `ORDER BY ... DESC`). |
 | `FamilyName` / `DisplayName` lengths | `FamilyName` max 200 chars (`VARCHAR(200)`); `DisplayName` max 100 chars (`VARCHAR(100)`). |
 | Event Publishing (ADR-0017) | Direct Domain Event Publishing to EventBridge (`$0.00` idle cost; Kinesis Data Stream removed). |
 | Post-Sprint 1 Additions (`account_frozen_periods`, `ledger_categorization_rules`, `family_system_settings`) | Tracked in design docs (`ADR-0006` / `ADR-0018`) for upcoming feature sprints; Sprint 1 baseline stays at 18 tables + 16 async indexes. |

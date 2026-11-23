@@ -95,12 +95,13 @@ graph TD
 
 > [!IMPORTANT]
 > **Aurora DSQL Migration Rules**:
-> 1. DSQL allows **exactly one DDL statement per transaction**. 
-> 2. Mixing DDL (e.g. `CREATE TABLE`) and DML (e.g. `INSERT`) is strictly forbidden.
-> 3. Indices must be built asynchronously using `CREATE INDEX ASYNC` in separate migration files.
-> 4. Use `FOREIGN KEY (...) REFERENCES ...` for database-level referential integrity and native `JSONB` for semi-structured data.
+> 1. Every migration file starts with `-- no-transaction` so DDL and `_sqlx_migrations` DML execute in separate autocommit transactions.
+> 2. DSQL allows **exactly one DDL statement per transaction** (`CREATE TABLE IF NOT EXISTS` / `CREATE INDEX ASYNC IF NOT EXISTS`).
+> 3. Mixing DDL (e.g. `CREATE TABLE`) and DML (e.g. `INSERT`) is strictly forbidden.
+> 4. Indices must be built asynchronously using `CREATE INDEX ASYNC` in separate migration files.
+> 5. Use `FOREIGN KEY (...) REFERENCES ...` for database-level referential integrity and native `JSONB` for semi-structured data.
 
-#### Task 3.1: Create Migration Files
+#### Task 3.1: Create Migration Files — ✅ COMPLETED
 * **Detailed Implementation Guide**: [Task 3.1 Detailed Guide](task_3_1_detailed_guide.md)
 * **Objective**: Author all 34 database migration files conforming to Aurora DSQL constraints (1 DDL per file, `CREATE INDEX ASYNC`, UUID v4/v7 PKs, explicit foreign keys, native `JSONB`).
 
@@ -148,38 +149,54 @@ backend/migrations/
 
 ### Phase 4: Migration Runner Lambda Implementation (Days 8–9)
 
-#### Task 4.1: Write the Rust Migration Runner Lambda
-* **Objective**: Write a Lambda binary using `lambda_runtime` that connects to Aurora DSQL and runs `sqlx::migrate!()` to apply embedded SQL migrations at runtime.
+#### Task 4.1: Write the Rust Migration Runner Lambda — ✅ COMPLETED
+* **Objective**: Write a Lambda binary using `lambda_runtime` that connects to Aurora DSQL via `infrastructure::db::pool::create_pool_with_max_connections(1)` and runs `infrastructure::db::migrations::run_dsql_migrations` (`locking = false`, OCC retries, `sys.wait_for_job`). Wired in `backend/infrastructure/sam/data-stream-template.yaml` as `FamilyLedgerMigrateRunnerFunction` (`familyledger-migrate-${Environment}`).
 * **Code Implementation (`backend/lambdas/migrate_runner/src/main.rs`)**:
 ```rust
 use anyhow::Context;
-use infrastructure::db::pool::create_pool;
+use infrastructure::db::{
+    migrations::{DsqlMigrationOptions, MigrationReport, run_dsql_migrations},
+    pool::create_pool_with_max_connections,
+};
 use lambda_runtime::{Error, LambdaEvent, run, service_fn};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
+#[derive(Debug, Deserialize)]
+struct Request {
+    #[serde(default = "default_wait_for_indexes")]
+    wait_for_indexes: bool,
+}
 
-#[derive(Deserialize)]
-struct Request {}
-
-#[derive(Serialize)]
+#[derive(Debug, Serialize, PartialEq, Eq)]
 struct Response {
     message: String,
     total_migrations: usize,
+    applied_now: usize,
+    already_applied: usize,
+    active_async_jobs: usize,
 }
 
-async fn handler(_event: LambdaEvent<Request>) -> Result<Response, Error> {
-    let pg_pool = create_pool().await?;
+async fn handler(event: LambdaEvent<Request>) -> Result<Response, Error> {
+    let pg_pool = create_pool_with_max_connections(1).await?;
+    let options = DsqlMigrationOptions {
+        wait_for_indexes: event.payload.wait_for_indexes,
+        ..DsqlMigrationOptions::default()
+    };
 
-    info!("Running schema migrations");
-    MIGRATOR.run(&pg_pool).await.context("Migration run failed")?;
+    let report = run_dsql_migrations(&pg_pool, options)
+        .await
+        .context("Migration run failed")?;
 
-    let total_migrations = MIGRATOR.iter().count();
-    Ok(Response {
-        message: "Schema migrations completed successfully".to_string(),
-        total_migrations,
-    })
+    info!(
+        total_migrations = report.total_migrations,
+        applied_now = report.applied_now,
+        already_applied = report.already_applied,
+        active_async_jobs = report.active_async_jobs,
+        "Schema migrations completed"
+    );
+
+    Ok(Response::from_report(report))
 }
 ```
 
@@ -187,30 +204,30 @@ async fn handler(_event: LambdaEvent<Request>) -> Result<Response, Error> {
 
 ### Phase 5: Testing, Local Validation & Deployment (Day 10)
 
-#### Task 5.1: Local Integration Testing Setup
-* **Objective**: Set up a local test database using PostgreSQL 16 via Docker/Testcontainers to validate the schema.
+#### Task 5.1: Local Integration Testing Setup — ✅ IMPLEMENTED (Run with Docker)
+* **Objective**: Validate all 34 migrations offline (`infrastructure/tests/migration_invariants.rs`) and against PostgreSQL 16 via Testcontainers (`infrastructure/tests/migrations_pg.rs`).
 * **Details**:
-  * Create a test utility in `infrastructure/src/test_utils.rs` that starts a container, runs the embedded SQL migrations, and exposes a connection pool.
-  * Ensure that local PostgreSQL can apply all 34 migration files without throwing exceptions.
+  * `infrastructure::db::migrations::run_postgres_migrations` strips `ASYNC` from `CREATE INDEX ASYNC` in memory so PG 16 executes all 34 files cleanly from the same source of truth.
+  * Run with Docker active: `cargo test -p infrastructure -- --ignored`.
 
 #### Task 5.2: Compilation & Deploy
 * **Objective**: Compile the Rust binary and deploy the CloudFormation/SAM stack.
 * **Details**:
-  * Execute `cargo lambda build --release --arm64` to compile the migration runner.
-  * Package and deploy the IaC templates to the AWS target environment.
-  * Trigger the `familyledger-migrate` Lambda function.
-  * Check AWS CloudWatch logs to verify database connectivity and successful schema creation.
-  * Verify background index creation status via SQL Client:
+  * Execute `cargo lambda build --release --arm64 --package migrate_runner` to compile the migration runner.
+  * Validate and deploy `familyledger-data-dev` (`cd backend/infrastructure/sam && sam validate -t data-stream-template.yaml --lint && sam deploy --config-file samconfig-data.toml`).
+  * Trigger the `familyledger-migrate-dev` Lambda function (`aws lambda invoke --function-name familyledger-migrate-dev --payload '{}' response.json`).
+  * Check AWS CloudWatch logs to verify database connectivity, `applied_now`/`already_applied` counts, and `active_async_jobs == 0`.
+  * Verify background index creation status via SQL Client if `wait_for_indexes` was `false`:
     ```sql
-    SELECT * FROM sys.jobs WHERE status = 'RUNNING' OR status = 'FAILED';
+    SELECT * FROM sys.jobs WHERE LOWER(status) IN ('submitted', 'processing', 'failed');
     ```
 
 ---
 
 ## Sprint 1 Definition of Done (DoD)
-- [x] AWS infrastructure templates (Cognito, API Gateway, S3, CloudFront, Aurora DSQL, EventBridge, IAM) are defined and verified (re-run `sam delete` + `sam deploy` for `familyledger-core-dev` and `sam deploy` for `familyledger-data-dev` on next AWS deploy).
+- [x] AWS infrastructure templates (Cognito, API Gateway, S3, CloudFront, Aurora DSQL, EventBridge, IAM, `FamilyLedgerMigrateRunnerFunction`) are defined and wired.
 - [x] EventBridge bus and least-privilege IAM roles are configured (`$0.00` idle cost; Kinesis disabled/removed per ADR-0017).
-- [x] Rust Cargo workspace compiles cleanly with zero warnings/errors (`cargo check`, `cargo clippy -- -D warnings`, `cargo fmt --check`).
-- [ ] Local database migration checks run successfully against PostgreSQL.
-- [ ] The Migration Runner Lambda compiles, deploys, and executes successfully on AWS.
-- [ ] Database contains all **18 schema tables** and **16 asynchronous indexes** (34 migrations total) verified via active schema checks.
+- [x] Rust Cargo workspace, all 34 SQL migrations, `infrastructure::db::migrations`, and `migrate_runner` Lambda compile cleanly with zero warnings/errors.
+- [ ] Local database migration checks run successfully against PostgreSQL 16 (`cargo test -p infrastructure -- --ignored` with Docker active).
+- [ ] The Migration Runner Lambda compiles with `cargo-lambda`, deploys via SAM, and executes successfully on AWS.
+- [ ] Live Aurora DSQL cluster contains all **18 schema tables** and **16 asynchronous indexes** (34 migrations total) verified via active schema checks.
