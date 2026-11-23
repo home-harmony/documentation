@@ -28,6 +28,9 @@ graph TD
 
 ## Detailed Task Breakdown
 
+> [!TIP]
+> **Full AWS Bootstrap, Clean Recreation & Complete Teardown Runbook**: For a unified command-by-command guide covering how to deploy all Sprint 1 AWS objects from scratch, recreate them cleanly after recent `ADR-0011` / `ADR-0017` refactorings, or completely remove them from your AWS account (including Aurora DSQL deletion protection and versioned S3 bucket cleanup), see **[`architecture/aws-deployment-and-teardown.md`](../../architecture/aws-deployment-and-teardown.md)**.
+
 ### Phase 1: AWS Serverless Infrastructure Provisioning (Days 1–3)
 
 #### Task 1.1: IAM & CloudFormation/SAM Template Setup — ✅ COMPLETED (Recreate stack cleanly for ADR-0011)

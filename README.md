@@ -18,6 +18,7 @@ documentation/
 ├── .ai/                               # Cross-repo AI context, governance rules & 3 shared skills
 ├── architecture/
 │   ├── system-overview.md             # Cloud architecture, AWS services & EventBridge domain events
+│   ├── aws-deployment-and-teardown.md # End-to-end AWS bootstrap, clean recreation & teardown runbook
 │   ├── aurora-dsql.md                 # Aurora DSQL constraints, OCC, IAM & migration rules
 │   ├── database-schema.md             # Complete DDL table (18) & async index (16) catalog
 │   ├── kinesis-cdc-streaming.md       # Event publishing analysis & Kinesis removal rationale (ADR-0017)
@@ -70,3 +71,20 @@ documentation/
 ---
 
 ## 🚀 Quick Navigation
+
+### ☁️ AWS Bootstrap, Recreation & Teardown
+* **[AWS Bootstrap, Recreation & Teardown Guide](architecture/aws-deployment-and-teardown.md)** — Complete runbook to provision, recreate (after `ADR-0011` and `ADR-0017` refactorings), verify, and completely remove all AWS objects created in Sprint 1 (`Aurora DSQL`, `familyledger-core-dev`, `familyledger-data-dev`).
+* **[Sprint 1 Execution Plan](roadmap/sprint-1/sprint_1_plan.md)** — Task-by-task breakdown (`Task 1.1` SAM Core Stack, `Task 1.2` Aurora DSQL & EventBridge, `Task 2.1` Rust Workspace, `Task 3.1` 34 DSQL Migrations).
+
+### 🏛️ Architecture & Domain Model
+* **[System Architecture Overview](architecture/system-overview.md)** — Serverless topology, microservices inventory, and scheduled EventBridge flows.
+* **[Ubiquitous Language & Invariants](domain/ubiquitous-language.md)** — Canonical glossary, financial formulas (`True Disposable Surplus`, `DebtServiceCost`), and 10 non-negotiable domain invariants.
+* **[Bounded Contexts & Aggregates](domain/bounded-contexts.md)** — The 9 DDD bounded contexts and aggregate boundaries.
+* **[REST API Design](architecture/api-design.md)** — Endpoints, `X-Family-Id` multi-family tenancy, role permission matrix, and RFC 9457 error contracts.
+* **[Database Schema Catalog](architecture/database-schema.md)** — All 18 Aurora DSQL tables and 16 asynchronous indexes (`CREATE INDEX ASYNC`).
+
+### 🤖 AI-First & Spec-Driven Workflow
+* **[AGENTS.md](AGENTS.md)** & **[AI Development Guide](ai-development-guide.md)** — Entry point and practical playbooks for our 7 specialized skills (`domain-and-adr`, `spec-driven-dev`, `rust-patterns`, `rust-testing`, `dsql-migrations`, `diagnosing-bugs`, `code-review`).
+* **[Architectural Decision Records (ADRs 0001–0019)](decisions/README.md)** — Chronological record of architectural decisions.
+* **[Testing Strategy](testing/testing-strategy.md)** — Layer 1 pure domain tests, Layer 2a Testcontainers PostgreSQL, Layer 2b Axum `oneshot`, and `spec_traceability`.
+
