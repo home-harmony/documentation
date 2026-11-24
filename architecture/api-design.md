@@ -46,7 +46,7 @@ DELETE /families/{id}/members/{mid}      # Owner only: soft-delete a family memb
 | `POST /families` | `UserIdentity` | `{ name, home_currency, owner_display_name }` | `201 Created` `{ id, name, home_currency, owner_member_id, created_at }` | `FamilyCreated`, `MemberJoined` |
 | `GET /families/{id}` | `AuthClaims` (`ViewFamilyWorkspace`) | — | `200 OK` `{ id, name, home_currency, created_at }` | — |
 | `PUT /families/{id}` | `AuthClaims` (`ManageFamily`) | `{ name, home_currency }` | `200 OK` `{ id, name, home_currency, created_at }` | *(None — profile metadata update)* |
-| `POST /families/{id}/invites` | `AuthClaims` (`ManageFamily`) | `{ role, permissions?: [], relationship?: string, ttl_hours?: i64 }` *(default `168`h = 7 days, max `720`h = 30 days)* | `201 Created` `{ token, family_id, role, permissions, relationship, created_by, created_at, expires_at }` | `MemberInvited` |
+| `POST /families/{id}/invites` | `AuthClaims` (`ManageFamily`) | `{ role, permissions?: [], relationship?: string, ttl_hours?: i64 }` *(wire `role`: `"owner" \| "member" \| "child" \| "other"`; `permissions`: `["record_own_transactions", "record_any_transaction", "view_all_transactions", "view_all_accounts", "manage_own_accounts", "view_loans", "view_budget", "view_reports"]`; `ttl_hours` default `168`h = 7 days, max `720`h = 30 days)* | `201 Created` `{ token, family_id, role, permissions, relationship, created_by, created_at, expires_at }` | `MemberInvited` |
 | `POST /families/{id}/members` | `UserIdentity` | `{ token, display_name }` | `201 Created` `{ id, family_id, user_id, display_name, role, permissions, relationship, joined_at }` | `MemberJoined` |
 | `GET /families/{id}/members` | `AuthClaims` (`ViewFamilyWorkspace`) | — | `200 OK` `{ items: [{ id, family_id, user_id, display_name, role, permissions, relationship, joined_at }] }` *(active `deleted_at IS NULL` only)* | — |
 | `PATCH /families/{id}/members/{mid}/role` | `AuthClaims` (`ManageFamily`) | `{ role, permissions?: [] }` | `200 OK` `{ id, family_id, user_id, display_name, role, permissions, relationship, joined_at }` | `MemberRoleChanged` *(0 events on no-op)* |
@@ -54,7 +54,8 @@ DELETE /families/{id}/members/{mid}      # Owner only: soft-delete a family memb
 
 **Key RFC 9457 Error Codes (`application/problem+json`)**:
 - **Auth / Context (`api/src/auth.rs`)**: `401 MISSING_CLAIMS`, `401 INVALID_CLAIMS`, `400 MISSING_FAMILY_ID`, `400 INVALID_FAMILY_ID`, `403 USER_NOT_IN_FAMILY`, `403 FAMILY_ID_MISMATCH`, `403 INSUFFICIENT_ROLE`.
-- **Domain / Lifecycle (`api/src/errors.rs`)**: `404 FAMILY_NOT_FOUND`, `404 MEMBER_NOT_FOUND`, `404 INVITE_TOKEN_NOT_FOUND`, `409 TOKEN_ALREADY_USED`, `409 MEMBER_ALREADY_EXISTS`, `409 DUPLICATE_OWNER`, `409 CANNOT_REMOVE_OWNER`, `410 FAMILY_DELETED`, `410 TOKEN_EXPIRED`, `422 INVALID_FAMILY_NAME` / `INVALID_DISPLAY_NAME` / `INVALID_CURRENCY_CODE` / `INVALID_RELATIONSHIP` / `INVALID_INVITE_TTL` / `INVARIANT_VIOLATION`.
+- **Request / Infrastructure (`api/src/errors.rs`)**: `400 INVALID_JSON` *(malformed JSON, unknown enum values for `role`/`permissions`, or malformed body UUIDs)*, `400 INVALID_MEMBER_ID` *(non-UUID `{mid}` path parameter)*, `500 INTERNAL_ERROR` *(sanitized generic `detail`; real cause logged via `tracing::error!`)*.
+- **Domain / Lifecycle (`api/src/errors.rs`)**: `404 FAMILY_NOT_FOUND`, `404 MEMBER_NOT_FOUND`, `404 INVITE_TOKEN_NOT_FOUND`, `409 TOKEN_ALREADY_USED`, `409 MEMBER_ALREADY_EXISTS`, `409 DUPLICATE_OWNER`, `409 CANNOT_REMOVE_OWNER`, `410 FAMILY_DELETED`, `410 TOKEN_EXPIRED`, `422 INVALID_FAMILY_NAME` / `INVALID_DISPLAY_NAME` / `INVALID_CURRENCY_CODE` / `INVALID_EMAIL` / `INVALID_RELATIONSHIP` / `INVALID_INVITE_TTL` / `INVARIANT_VIOLATION`.
 
 ### 2.3 Payment Accounts (Cards, Bank, Cash Envelopes)
 ```http

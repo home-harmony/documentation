@@ -58,7 +58,9 @@ documentation/
 │   ├── business-plan.md               # MVP problem, solution, multi-currency scope & cost model
 │   ├── sprint-roadmap.md              # S1-S7 execution roadmap (34+ migrations, ~15 weeks)
 │   ├── sprint-1/sprint_1_summary.md   # Sprint 1 completion summary (AWS, Rust, 34 migrations)
-│   └── sprint-2/sprint_2_plan.md      # Sprint 2 vertical-slice plan (Identity, Auth, Option B2 SAM)
+│   └── sprint-2/
+│       ├── sprint_2_plan.md           # Sprint 2 vertical-slice plan (Identity, Auth, Option B2 SAM)
+│       └── aws-deployment-guide.md    # Sprint 2 AWS upgrade, DSQL role bootstrap & smoke-test guide
 │
 └── testing/
     └── testing-strategy.md            # Test pyramid: Unit, Testcontainers PG, Axum, Spec Traceability
@@ -68,8 +70,9 @@ documentation/
 
 ## 🚀 Quick Navigation
 
-### ☁️ AWS Bootstrap, Recreation & Teardown
-* **[AWS Bootstrap, Recreation & Teardown Guide](architecture/aws-deployment-and-teardown.md)** — Complete runbook to provision, recreate (after `ADR-0011` and `ADR-0017` refactorings), verify, and completely remove all AWS objects created in Sprint 1 (`Aurora DSQL`, `familyledger-core-dev`, `familyledger-data-dev`).
+### ☁️ AWS Bootstrap, Operations & Teardown
+* **[AWS Deployment, Operations & Teardown Guide](architecture/aws-deployment-and-teardown.md)** — Authoritative Option B2 (3-stack DAG) product runbook for bootstrapping, day-2 service & migration deployments, clean recreation, and complete teardown across `dev` / `staging` / `prod`.
+* **[Sprint 2 AWS Deployment & Verification Guide](roadmap/sprint-2/aws-deployment-guide.md)** — Focused PowerShell upgrade runbook for deploying Sprint 2 (`family_service`, `36` migrations, `familyledger_app` role bootstrap, live Cognito + `X-Family-Id` smoke tests).
 * **[Sprint 1 Completion Summary](roadmap/sprint-1/sprint_1_summary.md)** — Delivered AWS infrastructure, Rust workspace, 34 Aurora DSQL migrations, and spec-driven governance.
 * **[Sprint 2 Execution Plan](roadmap/sprint-2/sprint_2_plan.md)** — Vertical-slice plan for `family_service`, multi-family `X-Family-Id` auth, `AU`/`FM` specs, and Option B2 3-stack SAM architecture.
 
