@@ -11,6 +11,8 @@ All API endpoints are hosted via Amazon API Gateway HTTP API and secured with AW
    * User identity (`user_id` from `sub`, plus optional `email` when using Cognito ID tokens; Access Tokens carry `sub` without `email`) is extracted from the validated Cognito JWT claims.
    * Multi-family workspace context is passed via the `X-Family-Id: <UUID>` request header for all family-scoped endpoints.
    * Authorization middleware verifies that `user_id` is an active member of `family_id` with sufficient role/permissions (ADR-0011).
+   * **Send the Cognito ID token (`IdToken`), not the Access Token**: the API Gateway `CognitoJwtAuthorizer` (`services-template.yaml`) sets `JwtConfiguration.Audience` to the web client ID, and only ID tokens carry the `aud` claim. Access tokens (which carry `client_id`, not `aud`) are rejected at the gateway with `401` before the Lambda runs. The Lambda extractor still treats `email` as optional.
+   * **CORS allow-list**: `X-Family-Id` is an allowed request header (alongside `Content-Type`, `Authorization`, `X-Amz-Date`, `X-Api-Key`). Allowed origins are the CloudFront URL exported by the `core` stack, plus `http://localhost:4200` in the `dev` environment only.
 3. **Idempotency**: All state-modifying endpoints (`POST` for transactions, payments, contributions) require a client-generated `idempotency_key: UUID`.
 4. **Pagination**: List endpoints use keyset pagination via opaque cursor tokens (`cursor=<base64>`). `OFFSET` is strictly banned (ADR-0002).
 5. **Ledger Immutability**: `PUT /transactions/{id}` is prohibited (`405 Method Not Allowed`). Transaction adjustments use the amendment pattern (`POST /transactions/{id}/amend`, ADR-0012).
@@ -56,6 +58,7 @@ DELETE /families/{id}/members/{mid}      # Owner only: soft-delete a family memb
 - **Auth / Context (`api/src/auth.rs`)**: `401 MISSING_CLAIMS`, `401 INVALID_CLAIMS`, `400 MISSING_FAMILY_ID`, `400 INVALID_FAMILY_ID`, `403 USER_NOT_IN_FAMILY`, `403 FAMILY_ID_MISMATCH`, `403 INSUFFICIENT_ROLE`.
 - **Request / Infrastructure (`api/src/errors.rs`)**: `400 INVALID_JSON` *(malformed JSON, unknown enum values for `role`/`permissions`, or malformed body UUIDs)*, `400 INVALID_MEMBER_ID` *(non-UUID `{mid}` path parameter)*, `500 INTERNAL_ERROR` *(sanitized generic `detail`; real cause logged via `tracing::error!`)*.
 - **Domain / Lifecycle (`api/src/errors.rs`)**: `404 FAMILY_NOT_FOUND`, `404 MEMBER_NOT_FOUND`, `404 INVITE_TOKEN_NOT_FOUND`, `409 TOKEN_ALREADY_USED`, `409 MEMBER_ALREADY_EXISTS`, `409 DUPLICATE_OWNER`, `409 CANNOT_REMOVE_OWNER`, `410 FAMILY_DELETED`, `410 TOKEN_EXPIRED`, `422 INVALID_FAMILY_NAME` / `INVALID_DISPLAY_NAME` / `INVALID_CURRENCY_CODE` / `INVALID_EMAIL` / `INVALID_RELATIONSHIP` / `INVALID_INVITE_TTL` / `INVARIANT_VIOLATION`.
+- **Concurrency Semantics (`ADR-0020`, Proposed)**: Mutating family operations execute atomically with OCC retries; concurrent redemption of the same invite token yields one `201 Created` and `409 TOKEN_ALREADY_USED` for losing callers, and concurrent joins by the same user with distinct tokens yield one `201 Created` and `409 MEMBER_ALREADY_EXISTS` (never `500 INTERNAL_ERROR`).
 
 ### 2.3 Payment Accounts (Cards, Bank, Cash Envelopes)
 ```http

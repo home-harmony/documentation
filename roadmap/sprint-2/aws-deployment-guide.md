@@ -214,7 +214,7 @@ Remove-Item Env:\PGPASSWORD
 ## 3. Step 3: Upgrade `familyledger-core-dev` First (Drop Legacy `FamilyLedgerApi`)
 
 > [!IMPORTANT]
-> **Deploy `familyledger-core-dev` BEFORE `familyledger-services-dev`**. [`template.yaml`](../../../backend/infrastructure/sam/template.yaml) removes the old `FamilyLedgerApi` and `ApiGatewayUrl` output so [`services-template.yaml`](../../../backend/infrastructure/sam/services-template.yaml) owns the HTTP API without conflicting CloudFormation exports or duplicate API Gateways.
+> **Deploy `familyledger-core-dev` BEFORE `familyledger-services-dev`**. [`template.yaml`](../../../backend/infrastructure/sam/template.yaml) removes the old `FamilyLedgerApi` and `ApiGatewayUrl` output so [`services-template.yaml`](../../../backend/infrastructure/sam/services-template.yaml) owns the HTTP API without running two API Gateways side by side or churning the invoke URL. (Export names do not collide: `familyledger-core-dev-ApiUrl` vs `familyledger-services-dev-ApiUrl`.)
 
 ```powershell
 Set-Location $SAM_DIR
@@ -452,13 +452,13 @@ $FAMILY_ID = $r2.Body.id
 $r3 = Invoke-FlApi GET "/profile/families" -Token $ALICE_TOKEN
 "3. GET /profile/families -> $($r3.Status) (Count=$($r3.Body.items.Count))"
 
-# 4. AU-01: Missing X-Family-Id -> expect 400 MISSING_FAMILY_ID
+# 4. AU-03: Missing X-Family-Id -> expect 400 MISSING_FAMILY_ID
 $r4 = Invoke-FlApi GET "/families/$FAMILY_ID" -Token $ALICE_TOKEN
 "4. Missing X-Family-Id -> $($r4.Status) ($($r4.Body.code))"
 
-# 5. AU-04: Mismatched X-Family-Id -> expect 403 FAMILY_ID_MISMATCH
-$r5 = Invoke-FlApi GET "/families/$FAMILY_ID" -Token $ALICE_TOKEN -FamilyId ([guid]::NewGuid().Guid)
-"5. Mismatched X-Family-Id -> $($r5.Status) ($($r5.Body.code))"
+# 5. AU-05: Route {id} differs from verified X-Family-Id -> expect 403 FAMILY_ID_MISMATCH
+$r5 = Invoke-FlApi GET "/families/$([guid]::NewGuid().Guid)" -Token $ALICE_TOKEN -FamilyId $FAMILY_ID
+"5. Route id != X-Family-Id -> $($r5.Status) ($($r5.Body.code))"
 
 # 6. GET & PUT /families/{id} as Owner -> expect 200 OK
 $r6a = Invoke-FlApi GET "/families/$FAMILY_ID" -Token $ALICE_TOKEN -FamilyId $FAMILY_ID
@@ -477,7 +477,7 @@ $r7 = Invoke-FlApi POST "/families/$FAMILY_ID/invites" -Token $ALICE_TOKEN -Fami
 $INVITE_TOKEN = $r7.Body.token
 "7. POST /families/{id}/invites -> $($r7.Status) (Token=$INVITE_TOKEN)"
 
-# 8. AU-03: Non-member Bob blocked before joining -> expect 403 USER_NOT_IN_FAMILY
+# 8. AU-04: Non-member Bob blocked before joining -> expect 403 USER_NOT_IN_FAMILY
 $r8 = Invoke-FlApi GET "/families/$FAMILY_ID" -Token $BOB_TOKEN -FamilyId $FAMILY_ID
 "8. Non-member Bob GET /families/{id} -> $($r8.Status) ($($r8.Body.code))"
 
@@ -493,7 +493,7 @@ $BOB_MEMBER_ID = $r9.Body.id
 $r10 = Invoke-FlApi GET "/families/$FAMILY_ID/members" -Token $BOB_TOKEN -FamilyId $FAMILY_ID
 "10. GET /families/{id}/members -> $($r10.Status) (Count=$($r10.Body.items.Count))"
 
-# 11. AU-06: Bob (Member) blocked from Owner-only PUT /families/{id} -> expect 403 INSUFFICIENT_ROLE
+# 11. AU-08: Bob (Member) blocked from Owner-only PUT /families/{id} -> expect 403 INSUFFICIENT_ROLE
 $r11 = Invoke-FlApi PUT "/families/$FAMILY_ID" -Token $BOB_TOKEN -FamilyId $FAMILY_ID -Body @{
     name = "Hijacked Name"
     home_currency = "USD"
@@ -514,6 +514,28 @@ $r13 = Invoke-FlApi DELETE "/families/$FAMILY_ID/members/$BOB_MEMBER_ID" -Token 
 # 14. Removed Bob immediately loses access -> expect 403 USER_NOT_IN_FAMILY
 $r14 = Invoke-FlApi GET "/families/$FAMILY_ID" -Token $BOB_TOKEN -FamilyId $FAMILY_ID
 "14. Soft-deleted Bob GET /families/{id} -> $($r14.Status) ($($r14.Body.code))"
+
+# 15. Concurrent single-use invite token race -> expect exactly one 201 and one 409 (MEMBER_ALREADY_EXISTS for same user, or TOKEN_ALREADY_USED for distinct users; zero 500s)
+$r15Inv = Invoke-FlApi POST "/families/$FAMILY_ID/invites" -Token $ALICE_TOKEN -FamilyId $FAMILY_ID -Body @{ role = "child" }
+$RACE_TOKEN = $r15Inv.Body.token
+$raceJobs = 1..2 | ForEach-Object {
+    Start-ThreadJob -ScriptBlock {
+        param($ApiUrl, $FamId, $Tok, $Jwt, $Name)
+        $body = @{ token = $Tok; display_name = $Name } | ConvertTo-Json -Compress
+        try {
+            $resp = Invoke-WebRequest -Method Post -Uri "$ApiUrl/families/$FamId/members" `
+                -Headers @{ Authorization = "Bearer $Jwt" } -ContentType "application/json" -Body $body
+            [PSCustomObject]@{ Status = [int]$resp.StatusCode; Code = "OK" }
+        } catch {
+            $raw = (New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())).ReadToEnd()
+            $err = try { $raw | ConvertFrom-Json } catch { $null }
+            [PSCustomObject]@{ Status = [int]$_.Exception.Response.StatusCode; Code = $err.code }
+        }
+    } -ArgumentList $API_URL, $FAMILY_ID, $RACE_TOKEN, $BOB_TOKEN, "Bob Race $_"
+}
+$raceResults = $raceJobs | Wait-Job | Receive-Job
+$raceJobs | Remove-Job
+"15. Concurrent invite race -> " + (($raceResults | ForEach-Object { "$($_.Status):$($_.Code)" }) -join ", ")
 ```
 
 ### 6.3 Check CloudWatch Logs & Clean Up Temporary Test Users
@@ -540,7 +562,7 @@ aws cognito-idp admin-delete-user --user-pool-id $USER_POOL_ID --username smoke-
 | **`401 Unauthorized` from API Gateway** | Sent Cognito `AccessToken` instead of `IdToken`, or stale `USER_POOL_ID` / `CLIENT_ID` | Extract `AuthenticationResult.IdToken` (contains `aud` matching `CognitoWebAppClientId`) and confirm `API_URL` points to `familyledger-services-dev`. |
 | **`500 INTERNAL_ERROR` with IAM/permission errors in CloudWatch** | Missing `familyledger_app` DSQL role, missing `AWS IAM GRANT`, or un-granted tables | Re-run Step 2 (`SELECT * FROM sys.iam_pg_role_mappings;` + `GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO familyledger_app;`). |
 | **`404 Not Found` from Axum handler** | Deployed older binary without `strip_apigw_stage_prefix` | Rebuild `family_service` (`cargo lambda build --release --arm64 --package family_service`) and re-deploy `familyledger-services-dev`. |
-| **CloudFormation `Export ... already exists`** | Deployed `services` before updating `core` | Run `sam deploy` on `template.yaml` (`familyledger-core-dev`) first so legacy `FamilyLedgerApi` and `ApiGatewayUrl` export are dropped. |
+| **Two API Gateways exist / API URL changed unexpectedly** | Deployed `services` before updating `core` (export names are distinct, so this is not an export collision) | Run `sam deploy` on `template.yaml` (`familyledger-core-dev`) so the legacy `FamilyLedgerApi` and `ApiGatewayUrl` export are dropped, then use the `familyledger-services-dev` `ApiGatewayUrl`. |
 | **Migration Lambda times out or reports active async jobs** | Re-index job still running on DSQL | Re-invoke `familyledger-migrate-dev` (`payload '{}'`); migration runner is idempotent and waits on `CALL sys.wait_for_job`. |
 
 ### Safe Rollback

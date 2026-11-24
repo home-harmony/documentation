@@ -33,7 +33,7 @@ documentation/
 ├── research/                          # Phase 1 factual primary-source research spikes (behavior specs live in ../backend/specs/)
 │
 ├── decisions/                         # Architectural Decision Records (ADRs)
-│   ├── README.md                      # ADR index (0001–0019) & MADR template
+│   ├── README.md                      # ADR index (0001–0020) & MADR template
 │   ├── 0001-aurora-dsql-serverless-db.md   # ADR 0001: Amazon Aurora DSQL
 │   ├── 0002-keyset-pagination.md           # ADR 0002: Keyset Cursor Pagination
 │   ├── 0003-rust-ddd-clean-architecture.md # ADR 0003: Clean Architecture / DDD in Rust
@@ -52,7 +52,8 @@ documentation/
 │   ├── 0016-pluggable-exchange-rate-providers.md # ADR 0016: Pluggable FX Providers (BNM / ECB)
 │   ├── 0017-cdc-and-event-publishing-strategies.md # ADR 0017: Event Publishing Strategy (Direct EventBridge)
 │   ├── 0018-ai-native-modular-platform-and-sdui.md # ADR 0018: AI-Native Modular Platform & SDUI
-│   └── 0019-declarative-test-specifications.md # ADR 0019: Declarative Behavior Specs & AI Workflow
+│   ├── 0019-declarative-test-specifications.md # ADR 0019: Declarative Behavior Specs & AI Workflow
+│   └── 0020-atomic-aggregate-update-port.md # ADR 0020 (Proposed): Atomic Aggregate Update Port & Targeted Writes
 │
 ├── roadmap/
 │   ├── business-plan.md               # MVP problem, solution, multi-currency scope & cost model
@@ -60,6 +61,7 @@ documentation/
 │   ├── sprint-1/sprint_1_summary.md   # Sprint 1 completion summary (AWS, Rust, 34 migrations)
 │   └── sprint-2/
 │       ├── sprint_2_plan.md           # Sprint 2 vertical-slice plan (Identity, Auth, Option B2 SAM)
+│       ├── sprint_2_review_fix_plan.md # Sprint 2 two-axis review remediation plan & tracker
 │       └── aws-deployment-guide.md    # Sprint 2 AWS upgrade, DSQL role bootstrap & smoke-test guide
 │
 └── testing/
@@ -85,6 +87,6 @@ documentation/
 
 ### 🤖 AI-First & Spec-Driven Workflow
 * **[AGENTS.md](AGENTS.md)** & **[AI Development Guide](ai-development-guide.md)** — Entry point and practical playbooks for our 7 specialized skills (`domain-and-adr`, `spec-driven-dev`, `rust-patterns`, `rust-testing`, `dsql-migrations`, `diagnosing-bugs`, `code-review`).
-* **[Architectural Decision Records (ADRs 0001–0019)](decisions/README.md)** — Chronological record of architectural decisions.
+* **[Architectural Decision Records (ADRs 0001–0020)](decisions/README.md)** — Chronological record of architectural decisions.
 * **[Testing Strategy](testing/testing-strategy.md)** — Layer 1 pure domain tests, Layer 2a Testcontainers PostgreSQL, Layer 2b Axum `oneshot`, and `spec_traceability`.
 

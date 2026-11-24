@@ -25,3 +25,8 @@ Chronological summary complementing formal Architecture Decision Records in [`do
 ## 2026-11-20 — Declarative Behavior Specifications & AI-First Optimization (`ADR-0019`)
 - **Decision**: Introduce self-contained `backend/specs/` (Formats `T`/`U`/`P`) with human-owned `Approved` status, 4 automated CI guardrails in `backend/domain/tests/spec_traceability.rs` (blocking tests on `Draft` rules, `Origin: observed` approvals, and open-question approvals), blind test generation, and 7 zero-overlap skills across `documentation/` and `backend/`.
 - **See**: [`0019-declarative-test-specifications.md`](../../decisions/0019-declarative-test-specifications.md)
+
+## 2026-11-24 - Option B2 3-Stack SAM Layout (`core` + `data` + `services`)
+- **Decision**: Split AWS SAM into three stacks with a one-way import DAG (`services` -> `core` & `data`): `core` (Cognito, S3, CloudFront), `data` (EventBridge bus, IAM roles, migrate runner), `services` (HTTP API + Lambdas). `FamilyLedgerApi` moved from `core` to `services`; `core` is deployed first to avoid two API Gateways and invoke-URL churn.
+- **See**: [`backend/infrastructure/sam/README.md`](../../../backend/infrastructure/sam/README.md) and [`0020-atomic-aggregate-update-port.md`](../../decisions/0020-atomic-aggregate-update-port.md) (*`Proposed`*: atomic `update` port + snapshot-diff writes on Aurora DSQL).
+

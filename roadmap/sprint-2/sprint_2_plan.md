@@ -105,7 +105,7 @@ Slice 5 ✅ (Local Option B2 3-Stack SAM Wiring & ARM64 Builds; Live AWS Deploy 
 - [x] `AU-01`–`AU-08` and `FM-23`–`FM-27` reviewed, `Approved` by human, and covered 1:1 by blind integration tests (`spec_traceability` passes).
 - [x] All 9 endpoints (`GET /profile/families` + 8 `/families*` routes) implemented across `domain`, `infrastructure`, `api`, and `lambdas/family_service` matching [`api-design.md`](../../architecture/api-design.md).
 - [x] Layer 1, Layer 2a (`cargo test -p infrastructure -- --ignored` with Docker), and Layer 2b (`oneshot`) tests pass alongside `cargo clippy --workspace --all-targets -- -D warnings`.
-- [ ] `cargo sqlx prepare --workspace -- --all-targets` offline cache committed *(generated locally in `backend/.sqlx/`; ready to commit)*.
+- [x] `cargo sqlx prepare --workspace -- --all-targets` offline cache regenerated in `backend/.sqlx/` *(ready to commit)*.
 - [ ] `idx_members_user` and `idx_invite_tokens_family` applied on live Aurora DSQL (`36` migrations), `familyledger_app` IAM role + default privileges configured, Option B2 3-stack SAM templates deployed, and live Cognito JWT + `X-Family-Id` tenant isolation verified *(deferred for manual AWS deploy per user)*.
 
 ---
@@ -177,7 +177,7 @@ Slice 5 ✅ (Local Option B2 3-Stack SAM Wiring & ARM64 Builds; Live AWS Deploy 
 ### Slice 5 (Local Option B2 3-Stack SAM Wiring & ARM64 Builds)
 - **Delivered**:
   - Removed legacy `FamilyLedgerApi`, `ApiGatewayUrl` output, and unused `Globals` from [`template.yaml`](../../../backend/infrastructure/sam/template.yaml).
-  - Added [`services-template.yaml`](../../../backend/infrastructure/sam/services-template.yaml) (`FamilyLedgerApi` HTTP API with Cognito JWT Authorizer + `X-Family-Id` CORS, `FamilyLedgerFamilyServiceFunction` with `DSQL_USER=familyledger_app`, `ServiceRoleArn`, `EVENT_BUS_NAME`, and all 9 routes) and [`samconfig-services.toml`](../../../backend/infrastructure/sam/samconfig-services.toml) (`DsqlClusterIdentifier="4bublzlvvtnwjpmgtotwrulv7m"`).
+  - Added [`services-template.yaml`](../../../backend/infrastructure/sam/services-template.yaml) (`FamilyLedgerApi` HTTP API with Cognito JWT Authorizer + `X-Family-Id` CORS, `FamilyLedgerFamilyServiceFunction` with `DSQL_USER=familyledger_app`, `ServiceRoleArn`, `EVENT_BUS_NAME`, and all 9 routes) and [`samconfig-services.toml`](../../../backend/infrastructure/sam/samconfig-services.toml) (`DsqlClusterIdentifier="4bublzlvvtnwjpmgtotwrulv7m"`, retained for this private dev repo per WS2-4).
   - Added `strip_apigw_stage_prefix` in [`api/src/auth.rs`](../../../backend/api/src/auth.rs) (+ unit tests), wrapped the Axum router in [`lambdas/family_service/src/main.rs`](../../../backend/lambdas/family_service/src/main.rs) via `tower::ServiceBuilder::new().map_request(strip_apigw_stage_prefix)`, moved `serde_json`/`anyhow`/`tower` `"util"` to `[dev-dependencies]` in [`lambdas/family_service/Cargo.toml`](../../../backend/lambdas/family_service/Cargo.toml), and added Layer 2b stage-prefix routing coverage in `slice_2_family_profile.rs`.
   - Synchronized [`infrastructure/sam/README.md`](../../../backend/infrastructure/sam/README.md) and [`aws-deployment-and-teardown.md`](../../architecture/aws-deployment-and-teardown.md) with the Option B2 upgrade order (`core` re-deployed before `services` deploy).
   - Built release ARM64 Lambda bootstrap binaries via `cargo lambda build --release --arm64`: `migrate_runner` (`13,303,552` bytes) and `family_service` (`14,395,784` bytes).
@@ -192,6 +192,13 @@ Slice 5 ✅ (Local Option B2 3-Stack SAM Wiring & ARM64 Builds; Live AWS Deploy 
   - *(Note: Layer 2a Docker PG16 `cargo test -p infrastructure -- --ignored` passed 7/7 in Slice 4; `infrastructure/` was unchanged in Slice 5.)*
 - **Deferred Manual AWS Steps** *(per user request not to mutate live AWS/DSQL; follow [`aws-deployment-guide.md`](./aws-deployment-guide.md))*:
   1. Deploy updated `data-stream-template.yaml` if needed and invoke `familyledger-migrate-dev` to apply all `36` migrations (`idx_members_user`, `idx_invite_tokens_family`).
-  2. Execute the 5-statement `familyledger_app` DSQL IAM role bootstrap against cluster `4bublzlvvtnwjpmgtotwrulv7m` with `arn:aws:iam::377161178071:role/familyledger-service-role-dev`.
+  2. Execute the 5-statement `familyledger_app` DSQL IAM role bootstrap against cluster `<YOUR_DSQL_CLUSTER_ID>` with `arn:aws:iam::<YOUR_ACCOUNT_ID>:role/familyledger-service-role-dev`.
   3. Re-deploy `familyledger-core-dev` (`template.yaml`) first to remove legacy `FamilyLedgerApi`, then deploy `familyledger-services-dev` (`services-template.yaml` + `samconfig-services.toml`).
   4. Sync `.env.dev` (`API_URL` from `familyledger-services-dev`) and smoke-test live Cognito JWT + `X-Family-Id` tenant isolation.
+
+### Review Remediation
+
+Following the Sprint 2 two-axis review (`sprint_2_review_fix_plan.md`), all code, migration/SQLx cache, SAM, test, and documentation findings were resolved without mutating live AWS/DSQL:
+- **Atomic Update Port (`ADR-0020` `Proposed`, `FM-28`–`FM-29` `Draft`)**: Replaced `FamilyRepository::save` with `insert_new` and transactional `update` (`SELECT ... FOR UPDATE` inside `retry_on_occ`, snapshot diff, targeted writes, tenant guards, and `23505` mapping).
+- **Hardening & Cleanup**: Gated `http://localhost:4200` CORS origin behind `IsDev`, added `DsqlUser` SAM parameter (`Default: familyledger_app`), scrubbed real AWS account/cluster IDs from docs, gated `SpyPublisher` behind `test-utils`, added `PutEvents` per-entry failure diagnostics, and enforced exhaustive error mapping + Newspaper ordering + `<= 40`-line functions.
+- **Verified Local Gates**: `cargo clippy --workspace --all-targets -- -D warnings` (0 warnings), `cargo test --workspace` (225 passed, 0 failed; 14 Docker-gated `#[ignore]` tests run separately), `cargo test -p infrastructure -- --ignored --test-threads=1` against PG16 (14/14 passed), `cargo lambda build --release --arm64` (`family_service` and `migrate_runner`), and `sam validate --lint` across all 3 templates.

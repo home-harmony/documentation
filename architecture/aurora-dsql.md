@@ -127,6 +127,13 @@ pub async fn list_transactions_read_only(
 }
 ```
 
+### 3.4 Preventing Write Skew (`SELECT ... FOR UPDATE` under OCC)
+
+Amazon Aurora DSQL uses lock-free Optimistic Concurrency Control (OCC) rather than pessimistic row-level locks. Standard `SELECT` queries do **not** participate in commit-time conflict detection, which exposes multi-step read–modify–write workflows to write skew and lost updates under concurrent writers.
+
+* **Mechanism**: Executing `SELECT ... FOR UPDATE` inside a read–write transaction includes the selected rows in Aurora DSQL's OCC read-dependency/write-set tracking without blocking concurrent transactions or creating deadlocks. If another transaction modifies overlapping keys before commit, Aurora DSQL rejects the losing commit with `SQLSTATE 40001` (`OC000`).
+* **FamilyLedger Requirement**: Aggregate mutations (such as `DsqlFamilyRepository::update`) must acquire `SELECT ... FROM <root_table> WHERE id = $1 FOR UPDATE`, reload current state, re-evaluate pure domain invariants, and write only changed rows **all inside the same `retry_on_occ` transaction**, so any `40001` retry re-reads fresh state and re-runs domain checks cleanly.
+
 ---
 
 ## 4. Primary Key Strategy: UUID v4 vs. UUID v7 (RFC 9562)
