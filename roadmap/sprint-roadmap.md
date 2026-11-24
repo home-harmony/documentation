@@ -7,10 +7,10 @@ Total Estimated Development Timeline: **~15 Weeks** (Part-time / Agentic acceler
 ## Sprint Schedule
 
 ```
-Sprint 1 (Weeks 1–2)  ──► AWS Infra, Aurora DSQL (34 Migrations), CDC, Rust Workspace, Migrations Runner
+Sprint 1 (Weeks 1–2)  ──► AWS Infra, Aurora DSQL (34 Migrations), EventBridge, Rust Workspace, Migrations Runner
 Sprint 2 (Weeks 3–4)  ──► Identity & Family Context, Multi-Family Auth (X-Family-Id), Granular Permissions
 Sprint 3 (Weeks 5–7)  ──► Payment Accounts & Snapshots, Ledger Core (Immutable/Amendments), FX Transfers
-Sprint 4 (Weeks 8–10) ──► Debt Planner: Extensible Kinds, LoanPayment Child Entity, CDC Sync, Avalanche/Snowball
+Sprint 4 (Weeks 8–10) ──► Debt Planner: Extensible Kinds, LoanPayment Child Entity, EventBridge Sync, Avalanche/Snowball
 Sprint 5 (Weeks 11–12)──► Budget Approval Flow, Loan-Bound Insurance, Savings Goals, Daily FX Fetcher (BNM)
 Sprint 6 (Weeks 13–14)──► Scheduled Automation, Notifications (Push/FCM), Offline Caching, OCC Hardening
 Sprint 7 (Week 15)    ──► E2E Test Suite, Multi-Tenant Security Audit, Load Testing, Family Beta Launch
@@ -20,7 +20,7 @@ Sprint 7 (Week 15)    ──► E2E Test Suite, Multi-Tenant Security Audit, Loa
 
 ## Detailed Deliverables by Sprint
 
-### [Sprint 1](sprint-1/sprint_1_plan.md) (2 Weeks)
+### [Sprint 1](sprint-1/sprint_1_summary.md) (2 Weeks) — ✅ Completed
 * **AWS Infrastructure Provisioning**: Cognito User Pool (identity only), API Gateway HTTP API (`X-Family-Id` CORS), S3 + CloudFront hosting, Aurora DSQL cluster, custom EventBridge bus (`$0.00` idle cost; Kinesis removed per ADR-0017).
 * **Rust Multi-Crate Workspace**: Clean Architecture setup (`domain/`, `infrastructure/`, `api/`, `lambdas/`) with pinned dependencies (`sqlx 0.9.0`, `aurora-dsql-sqlx-connector 0.2.2`).
 * **Migration Runner Lambda (`migrate_runner`)**: Deploy embedded SQLx migrator and initial **34 individual SQL migrations** applying all 18 tables and 16 asynchronous indexes.

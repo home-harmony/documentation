@@ -27,7 +27,7 @@ Non-negotiable guardrails across both `documentation/` and `backend/` repositori
 
 - **Pure Domain & ACL**: Core domain logic must stay decoupled from wire DTOs, database rows, HTTP frameworks, and AWS SDKs. Translate external payloads at boundaries via explicit mappers/codecs.
 - **Canonical Error Schema & API Docs**:
-  - Return structured machine-readable `code` and developer diagnostics (`Content-Type: application/problem+json` per RFC 9457 target for API error payloads, preserving `backend/api/src/errors.rs` status mappings).
+  - Return structured machine-readable `code` and developer diagnostics (`Content-Type: application/problem+json` per RFC 9457, implemented in `backend/api/src/errors.rs` and `backend/api/src/auth.rs`).
   - Frontends map `error.code` to localized copy; never expose raw backend diagnostic strings as primary user-facing UI text.
   - Any endpoint, auth rule, or error code change must update [`api-design.md`](../../architecture/api-design.md) in the same work unit.
 

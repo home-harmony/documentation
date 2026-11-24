@@ -1,6 +1,6 @@
 # FamilyLedger Documentation Portal
 
-Welcome to the central documentation repository for **FamilyLedger**, a private, family-shared financial hub built on AWS Serverless and Rust.
+Welcome to the central documentation repository for **HomeHarmony** (`FamilyLedger` internal product/architecture name), a private, family-shared financial hub built on AWS Serverless and Rust.
 
 > 🇷🇺 **Для пользователей и членов семьи**: Описание проекта простыми словами на русском языке доступно в файле **[README.ru.md](README.ru.md)**.
 > 🤖 **AI IDE Setup**: Because `documentation/` and `backend/` are separate Git repositories ([ADR-0004](decisions/0004-multi-repo-organization.md)), open both folders together as a **multi-root workspace** (not the parent `home-harmony/` folder) so `AGENTS.md` and `.agents/skills.json` auto-discover cleanly.
@@ -47,7 +47,7 @@ documentation/
 │   ├── 0011-multi-family-membership.md     # ADR 0011: Multi-Family Membership & X-Family-Id Header
 │   ├── 0012-immutable-ledger-transactions.md # ADR 0012: Immutable Ledger & Reversals
 │   ├── 0013-budget-owner-approval-flow.md  # ADR 0013: Monthly Budget Owner Review & Approval
-│   ├── 0014-credit-card-explicit-loan-link.md # ADR 0014: Credit Card CDC Loan Link
+│   ├── 0014-credit-card-explicit-loan-link.md # ADR 0014: Credit Card Event-Driven Loan Link
 │   ├── 0015-multi-currency-live-exchange-rates.md # ADR 0015: Multi-Currency & Dual-Amount Transfers
 │   ├── 0016-pluggable-exchange-rate-providers.md # ADR 0016: Pluggable FX Providers (BNM / ECB)
 │   ├── 0017-cdc-and-event-publishing-strategies.md # ADR 0017: Event Publishing Strategy (Direct EventBridge)
@@ -57,12 +57,7 @@ documentation/
 ├── roadmap/
 │   ├── business-plan.md               # MVP problem, solution, multi-currency scope & cost model
 │   ├── sprint-roadmap.md              # S1-S7 execution roadmap (34 migrations, ~15 weeks)
-│   └── sprint-1/
-│       ├── sprint_1_plan.md           # Sprint 1 detailed execution plan (34 migrations)
-│       ├── task_1_1_detailed_guide.md # Task 1.1 AWS SAM / CloudFormation guide
-│       ├── task_1_2_detailed_guide.md # Task 1.2 Database & EventBridge guide
-│       ├── task_2_1_detailed_guide.md # Task 2.1 Rust Multi-Crate Workspace guide
-│       └── task_3_1_detailed_guide.md # Task 3.1 Aurora DSQL Migration Files guide
+│   └── sprint-1/sprint_1_summary.md   # Sprint 1 completion summary (AWS, Rust, 34 migrations)
 │
 └── testing/
     └── testing-strategy.md            # Test pyramid: Unit, Testcontainers PG, Axum, Spec Traceability
@@ -74,7 +69,7 @@ documentation/
 
 ### ☁️ AWS Bootstrap, Recreation & Teardown
 * **[AWS Bootstrap, Recreation & Teardown Guide](architecture/aws-deployment-and-teardown.md)** — Complete runbook to provision, recreate (after `ADR-0011` and `ADR-0017` refactorings), verify, and completely remove all AWS objects created in Sprint 1 (`Aurora DSQL`, `familyledger-core-dev`, `familyledger-data-dev`).
-* **[Sprint 1 Execution Plan](roadmap/sprint-1/sprint_1_plan.md)** — Task-by-task breakdown (`Task 1.1` SAM Core Stack, `Task 1.2` Aurora DSQL & EventBridge, `Task 2.1` Rust Workspace, `Task 3.1` 34 DSQL Migrations).
+* **[Sprint 1 Completion Summary](roadmap/sprint-1/sprint_1_summary.md)** — Delivered AWS infrastructure, Rust workspace, 34 Aurora DSQL migrations, and spec-driven governance.
 
 ### 🏛️ Architecture & Domain Model
 * **[System Architecture Overview](architecture/system-overview.md)** — Serverless topology, microservices inventory, and scheduled EventBridge flows.

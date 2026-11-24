@@ -1,6 +1,6 @@
 # AWS Bootstrap, Recreation & Teardown Guide — FamilyLedger
 
-> **Scope**: End-to-end operational runbook for bootstrapping, cleanly recreating (after [`ADR-0011`](../decisions/0011-multi-family-membership.md) and [`ADR-0017`](../decisions/0017-cdc-and-event-publishing-strategies.md) refactorings), verifying, and completely removing all AWS infrastructure provisioned during completed [Sprint 1](../roadmap/sprint-1/sprint_1_plan.md) tasks (`Task 1.1` and `Task 1.2`).
+> **Scope**: End-to-end operational runbook for bootstrapping, cleanly recreating (after [`ADR-0011`](../decisions/0011-multi-family-membership.md) and [`ADR-0017`](../decisions/0017-cdc-and-event-publishing-strategies.md) refactorings), verifying, and completely removing all AWS infrastructure provisioned during completed [Sprint 1](../roadmap/sprint-1/sprint_1_summary.md).
 
 ---
 
@@ -29,6 +29,7 @@ flowchart TD
         EventBus["Amazon EventBridge Custom Bus<br/>familyledger-events-dev"]
         ServiceRole["IAM Role: familyledger-service-role-dev<br/>dsql:DbConnect + events:PutEvents"]
         MigrateRole["IAM Role: familyledger-migration-runner-role-dev<br/>dsql:DbConnect + dsql:DbConnectAdmin"]
+        MigrateFn["Lambda: familyledger-migrate-dev<br/>ARM64 provided.al2023<br/>Embedded DSQL Migrations"]
     end
 
     CognitoPool --> CognitoClient
@@ -39,6 +40,8 @@ flowchart TD
     SpaBucketPolicy --> Cdn
     DSQL -->|"Cluster ID passed as param"| ServiceRole
     DSQL -->|"Cluster ID passed as param"| MigrateRole
+    MigrateRole --> MigrateFn
+    MigrateFn --> DSQL
     EventBus --> ServiceRole
 ```
 
@@ -46,7 +49,7 @@ flowchart TD
 
 | Provisioning Source | Stack / Resource Name | AWS Resource Type | Purpose & ADR Alignment | Idle Cost |
 | :--- | :--- | :--- | :--- | :--- |
-| **AWS CLI** (`Task 1.2`) | `4bublzlvvtnwjpmgtotwrulv7m` *(or newly generated ID)* | `AWS::DSQL::Cluster` | Serverless active-active PostgreSQL 16 database ([`ADR-0001`](../decisions/0001-aurora-dsql-serverless-db.md)) | **$0.00** |
+| **AWS CLI** (`Task 1.2`) | `<YOUR_DSQL_CLUSTER_ID>` | `AWS::DSQL::Cluster` | Serverless active-active PostgreSQL 16 database ([`ADR-0001`](../decisions/0001-aurora-dsql-serverless-db.md)) | **$0.00** |
 | **SAM: `familyledger-core-dev`** (`Task 1.1`) | `FamilyLedgerUserPool` (`familyledger-users-dev`) | `AWS::Cognito::UserPool` | Identity-only user pool (`sub`, `email`). No custom `family_id`/`family_role` schema attributes ([`ADR-0011`](../decisions/0011-multi-family-membership.md)) | **$0.00** |
 | **SAM: `familyledger-core-dev`** (`Task 1.1`) | `FamilyLedgerWebAppClient` (`familyledger-web-dev`) | `AWS::Cognito::UserPoolClient` | OAuth2 Code Grant / SRP public client for Web & Mobile | **$0.00** |
 | **SAM: `familyledger-core-dev`** (`Task 1.1`) | `FamilyLedgerUserPoolDomain` (`familyledger-dev-{AccountId}`) | `AWS::Cognito::UserPoolDomain` | Cognito Hosted UI OAuth2 domain | **$0.00** |
@@ -72,7 +75,7 @@ Recent domain and architectural refactorings introduced two breaking infrastruct
    - **AWS Cognito Limitation**: CloudFormation cannot delete custom schema attributes from an existing `AWS::Cognito::UserPool` in-place. `familyledger-core-dev` must be deleted and re-deployed so a clean identity-only User Pool (`sub`, `email`) and updated API Gateway CORS (`AllowHeaders` including `X-Family-Id`) are provisioned.
 2. **Direct EventBridge Domain Event Publishing ([`ADR-0017`](../decisions/0017-cdc-and-event-publishing-strategies.md))**:
    - Amazon Kinesis Data Stream was removed from `data-stream-template.yaml` to eliminate continuous hourly shard charges (`$10.80–$28.80/month`).
-   - Re-deploying (or recreating) `familyledger-data-dev` ensures any legacy Kinesis stream is removed and only `FamilyLedgerEventBus`, `FamilyLedgerServiceRole`, and `FamilyLedgerMigrationRunnerRole` remain active.
+   - Re-deploying (or recreating) `familyledger-data-dev` ensures any legacy Kinesis stream is removed and only `FamilyLedgerEventBus`, `FamilyLedgerServiceRole`, `FamilyLedgerMigrationRunnerRole`, and `FamilyLedgerMigrateRunnerFunction` remain active.
 
 ---
 
@@ -88,7 +91,7 @@ aws sts get-caller-identity
 ```
 
 ### 3.2 Deployer IAM Inline Policy
-Because `familyledger-data-dev` creates named IAM roles (`familyledger-service-role-dev` and `familyledger-migration-runner-role-dev`), your IAM deployer user (e.g., `programmer-user`) must have permissions to manage `familyledger-*` roles. If not already attached, add the inline policy `FamilyLedgerDeployerRoleManagementPolicy` (replace `377161178071` with your AWS `AccountId` if different):
+Because `familyledger-data-dev` creates named IAM roles (`familyledger-service-role-dev` and `familyledger-migration-runner-role-dev`), your IAM deployer user (e.g., `programmer-user`) must have permissions to manage `familyledger-*` roles. If not already attached, add the inline policy `FamilyLedgerDeployerRoleManagementPolicy` (replace `<YOUR_ACCOUNT_ID>` with your 12-digit AWS `AccountId`):
 
 ```json
 {
@@ -108,13 +111,13 @@ Because `familyledger-data-dev` creates named IAM roles (`familyledger-service-r
                 "iam:GetRolePolicy",
                 "iam:TagRole"
             ],
-            "Resource": "arn:aws:iam::377161178071:role/familyledger-*"
+            "Resource": "arn:aws:iam::<YOUR_ACCOUNT_ID>:role/familyledger-*"
         },
         {
             "Sid": "AllowPassRoleToLambda",
             "Effect": "Allow",
             "Action": "iam:PassRole",
-            "Resource": "arn:aws:iam::377161178071:role/familyledger-*",
+            "Resource": "arn:aws:iam::<YOUR_ACCOUNT_ID>:role/familyledger-*",
             "Condition": {
                 "StringEquals": {
                     "iam:PassedToService": "lambda.amazonaws.com"
@@ -148,7 +151,7 @@ aws dsql create-cluster `
   --tags Environment=dev,Project=FamilyLedger
 ```
 
-Capture the `"identifier"` from the output (e.g., `4bublzlvvtnwjpmgtotwrulv7m`) and wait until `"status"` reaches `"ACTIVE"`:
+Capture the `"identifier"` from the output (e.g., `<YOUR_DSQL_CLUSTER_ID>`) and wait until `"status"` reaches `"ACTIVE"`:
 
 ```powershell
 $DSQL_ID = "<YOUR_DSQL_CLUSTER_ID>"
@@ -165,7 +168,7 @@ aws dsql get-cluster --identifier $DSQL_ID --region us-east-1
 Provisions Cognito User Pool, App Client, Hosted UI Domain, API Gateway HTTP API (`dev`), S3 SPA Bucket, CloudFront OAC, and CloudFront Distribution.
 
 ```powershell
-cd c:\Users\demiu\my-rust-projects\home-harmony\backend\infrastructure\sam
+cd backend\infrastructure\sam
 
 # 1. Validate the CloudFormation/SAM template
 sam validate -t template.yaml --lint
@@ -190,11 +193,11 @@ Compiles the ARM64 Rust Migration Runner binary (`target/lambda/migrate_runner/b
 
 ```powershell
 # 1. Build the ARM64 Migration Runner Lambda binary
-cd c:\Users\demiu\my-rust-projects\home-harmony\backend
+cd backend
 cargo lambda build --release --arm64 --package migrate_runner
 
 # 2. Validate the data & event template
-cd c:\Users\demiu\my-rust-projects\home-harmony\backend\infrastructure\sam
+cd backend\infrastructure\sam
 sam validate -t data-stream-template.yaml --lint
 
 # 3. Deploy familyledger-data-dev (passing your active DSQL cluster ID)
@@ -213,7 +216,7 @@ sam deploy `
 Trigger `familyledger-migrate-dev` to apply all pending embedded SQL migrations (`backend/migrations/*.sql`) and wait for all `CREATE INDEX ASYNC` background jobs to finish via `CALL sys.wait_for_job`:
 
 ```powershell
-cd c:\Users\demiu\my-rust-projects\home-harmony\backend
+cd backend
 
 # 1. Invoke the migration runner (default payload '{}' waits for async index jobs)
 aws lambda invoke `
@@ -236,6 +239,21 @@ Remove-Item target\migrate-response.json -Force
 
 ---
 
+### Sprint 2 Prerequisite: Non-Admin Aurora DSQL Role Mapping (`DSQL_USER`)
+
+`FamilyLedgerServiceRole` grants `dsql:DbConnect` without `dsql:DbConnectAdmin`, so runtime service Lambdas cannot authenticate as `"admin"` (`infrastructure::db::pool` defaults `DSQL_USER` to `"admin"` for `migrate_runner`). Before deploying Sprint 2 service Lambdas, connect as `admin` once and map a least-privilege database role to `FamilyLedgerServiceRole`:
+
+```sql
+CREATE ROLE familyledger_app WITH LOGIN;
+AWS IAM GRANT familyledger_app TO '<FamilyLedgerServiceRoleArn>';
+GRANT USAGE ON SCHEMA public TO familyledger_app;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO familyledger_app;
+```
+
+Set `DSQL_USER=familyledger_app` in runtime service Lambda environment variables.
+
+---
+
 ### Step 5: Synchronize Outputs to `backend/.env.dev` & Verify
 
 Query the CloudFormation stack outputs and update `backend/.env.dev` (using `backend/.env.example` as template):
@@ -248,7 +266,7 @@ aws cloudformation describe-stacks `
   --query "Stacks[0].Outputs" `
   --output table
 
-# Print Data Stack outputs (EventBusArn, EventBusName, ServiceRoleArn, MigrationRunnerRoleArn)
+# Print Data Stack outputs (EventBusArn, EventBusName, ServiceRoleArn, MigrationRunnerRoleArn, MigrateRunnerFunctionName, MigrateRunnerFunctionArn)
 aws cloudformation describe-stacks `
   --stack-name familyledger-data-dev `
   --region us-east-1 `
@@ -289,13 +307,16 @@ If you already have an older deployment in AWS and want to **recreate all Sprint
    - Run the complete removal steps in **[Section 6](#6-how-to-remove-teardown-all-aws-objects)** first, then run **[Section 4](#4-how-to-deploy-bootstrap-the-entire-system-to-aws)**.
 2. **If your Aurora DSQL cluster (`$DSQL_ID`) is empty/clean and you only want to recreate the SAM stacks (`familyledger-core-dev` and `familyledger-data-dev`)**:
    ```powershell
-   cd c:\Users\demiu\my-rust-projects\home-harmony\backend\infrastructure\sam
-
    # 1. Tear down existing SAM stacks
    sam delete --stack-name familyledger-core-dev --region us-east-1 --no-prompts
    sam delete --stack-name familyledger-data-dev --region us-east-1 --no-prompts
 
-   # 2. Re-deploy both stacks cleanly from current templates
+   # 2. Build the ARM64 migrate_runner binary required by data-stream-template.yaml
+   cd backend
+   cargo lambda build --release --arm64 --package migrate_runner
+
+   # 3. Re-deploy both stacks cleanly from current templates
+   cd infrastructure\sam
    sam deploy --template-file template.yaml --config-file samconfig.toml --no-confirm-changeset
    sam deploy --template-file data-stream-template.yaml --config-file samconfig-data.toml --capabilities CAPABILITY_NAMED_IAM --no-confirm-changeset
    ```
@@ -313,7 +334,7 @@ To remove the entire system from AWS with **zero leftover resources or hidden ch
 
 ### Step 1: Delete the Data & Event Bus Stack (`familyledger-data-dev`)
 
-Removes `FamilyLedgerEventBus`, `FamilyLedgerServiceRole`, and `FamilyLedgerMigrationRunnerRole`:
+Removes `FamilyLedgerEventBus`, `FamilyLedgerServiceRole`, `FamilyLedgerMigrationRunnerRole`, and `FamilyLedgerMigrateRunnerFunction`:
 
 ```powershell
 sam delete --stack-name familyledger-data-dev --region us-east-1 --no-prompts

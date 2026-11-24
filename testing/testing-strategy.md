@@ -29,7 +29,7 @@ Test Pyramid
 
 ### Layer 2a: Database Integration Tests
 * **Location**: `backend/infrastructure/tests/`.
-* **Execution**: `cargo test -p infrastructure` (Requires Docker active).
+* **Execution**: `cargo test -p infrastructure` (offline unit + `migration_invariants` checks); `cargo test -p infrastructure -- --ignored` (runs `#[ignore]`d Testcontainers PostgreSQL 16 tests; requires Docker active).
 * **Scope**:
   * Real SQL execution against a local PostgreSQL 16 container via `testcontainers`.
   * Keyset cursor pagination encoding and query range verification.
@@ -59,14 +59,17 @@ Test Pyramid
 # Run pure domain unit tests (Instant feedback)
 cargo test -p domain
 
-# Run infrastructure database tests with Testcontainers
+# Run offline infrastructure unit + migration invariant tests
 cargo test -p infrastructure
+
+# Run Testcontainers PostgreSQL 16 database tests (requires Docker active)
+cargo test -p infrastructure -- --ignored
 
 # Run specific handler tests
 cargo test -p ledger_service
 
 # Prepare SQLx query verification cache for CI
-cargo sqlx prepare -- --all-targets
+cargo sqlx prepare --workspace -- --all-targets
 
 # Verify declarative spec <-> test traceability (ADR-0019)
 cargo test -p domain --test spec_traceability

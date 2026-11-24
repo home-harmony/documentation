@@ -17,11 +17,11 @@ Amazon Aurora DSQL is a distributed, serverless relational database offering act
 | **Truncation** | `TRUNCATE TABLE` | **Not supported** | Use `DELETE FROM table WHERE ...` in batches $\le 500$ rows. |
 | **Database Triggers** | `CREATE TRIGGER` | **Not supported** | Implement all calculations, validations, and downstream events in Rust code. |
 | **Cascading Deletes** | `ON DELETE CASCADE` | **Supported (RESTRICT preferred)** | Prefer `ON DELETE RESTRICT` with explicit application-level soft-deletes (`deleted_at TIMESTAMPTZ NULL`). |
-| **DDL Transactions** | Multi-statement DDL | **1 DDL statement per transaction** | Exactly **1 DDL operation per migration file**. Never mix DDL and DML in the same file. |
-| **Index Builds** | Blocking `CREATE INDEX` | `CREATE INDEX ASYNC` only | Write index creations in dedicated migration files; monitor status via `SELECT * FROM sys.jobs`. |
+| **DDL Transactions** | Multi-statement DDL | **1 DDL statement per transaction** | Start every file with `-- no-transaction`, use `IF NOT EXISTS` + **1 DDL per migration file**, disable SQLx advisory locks (`Migrator::set_locking(false)`), and never mix DDL and DML. |
+| **Index Builds** | Blocking `CREATE INDEX` | `CREATE INDEX ASYNC` only | Write index creations in dedicated migration files (omit `ASC`/`DESC`); await completion via `CALL sys.wait_for_job` or inspect `SELECT * FROM sys.jobs`. |
 | **Write Tx Limit** | Unlimited | **3,000-row transaction limit** | Keep batch writes $\le 500$ rows per transaction with explicit individual commits. |
-| **Concurrency Model** | Row-level locking (Pessimistic) | OCC (Optimistic Concurrency Control) | Use `aurora-dsql-sqlx-connector` with `occ` feature to auto-retry commit conflicts (SQLSTATE 40001). |
-| **Read Transactions** | Standard `SELECT` | `BEGIN READ ONLY` | Use `BEGIN READ ONLY` on all read endpoints to eliminate OCC conflict overhead. |
+| **Concurrency Model** | Row-level locking (Pessimistic) | OCC (Optimistic Concurrency Control) | Use `aurora-dsql-sqlx-connector` with `occ` feature to auto-retry commit conflicts (`40001` / `OC000` / `OC001`). |
+| **Read Transactions** | Standard `SELECT` | `BEGIN READ ONLY` | Start read-only transactions directly with `pool.begin_with("BEGIN READ ONLY")` to eliminate OCC conflict overhead. |
 | **Pagination** | `OFFSET` / `LIMIT` | Keyset (Cursor) only | `OFFSET` is banned (consumes DPUs proportional to depth). Keyset cursor with `(occurred_at, id) < ($2, $3)`. |
 | **Authentication** | Password / IAM | IAM Authentication only | Managed automatically by `aurora-dsql-sqlx-connector` with background token refresh. |
 
@@ -39,14 +39,16 @@ aurora-dsql-sqlx-connector = { version = "0.2.2", features = ["pool", "occ"] }
 ```
 
 ### 3.1 Connection Pool Initialization
+Use `infrastructure::db::pool::create_pool` (which normalizes bare `DSQL_ENDPOINT` hostnames into `postgres://` URLs via `normalize_dsql_url` and defaults `DSQL_USER` to `"admin"` for migration tools; runtime services using `FamilyLedgerServiceRole` must set `DSQL_USER` to an IAM-mapped non-admin DSQL role):
+
 ```rust
-use aurora_dsql_sqlx_connector::pool;
+use infrastructure::db::pool::create_pool;
 use sqlx::PgPool;
 
-pub async fn create_dsql_pool(endpoint: &str) -> Result<PgPool, sqlx::Error> {
+pub async fn init_dsql_pool() -> anyhow::Result<PgPool> {
     // Connector auto-detects AWS region, generates IAM auth tokens,
     // and refreshes tokens at 80% of their 15-minute validity window.
-    pool::connect(endpoint).await
+    create_pool().await
 }
 ```
 
@@ -74,10 +76,10 @@ pub async fn save_transaction_with_retry(
             tx_data.family_id,
             tx_data.recorded_by,
             tx_data.kind.as_str(),
-            tx_data.amount.value,
-            tx_data.amount.currency.as_str(),
-            tx_data.destination_amount.as_ref().map(|m| m.value),
-            tx_data.destination_amount.as_ref().map(|m| m.currency.as_str()),
+            tx_data.amount.amount(),
+            tx_data.amount.currency().as_str(),
+            tx_data.destination_amount.as_ref().map(|m| m.amount()),
+            tx_data.destination_amount.as_ref().map(|m| m.currency().as_str()),
             tx_data.category_id,
             tx_data.occurred_at,
             tx_data.idempotency_key,

@@ -83,7 +83,7 @@ To keep every customization tracked on GitHub across our two-repository umbrella
 
 1. **Author Migrations Safely**: Enforces `{YYYYMMDDHHMMSS}_{description}.sql`, **strictly 1 DDL statement per file**, `CREATE INDEX ASYNC`, UUID v4/v7 PKs, `deleted_at` soft-deletes, and zero edits to already-applied migrations.
 2. **Author Queries Safely**: Enforces `retry_on_occ` on mutations, `BEGIN READ ONLY` on reads, `WHERE family_id = $1`, and keyset cursor pagination (zero `OFFSET`).
-3. **Verify**: Run `cargo test -p infrastructure` (with Docker running) and refresh offline metadata (`cargo sqlx prepare -- --all-targets`).
+3. **Verify**: Run `cargo test -p infrastructure -- --ignored` (with Docker running) and refresh offline metadata (`cargo sqlx prepare --workspace -- --all-targets`).
 
 **Copy-Paste Prompt Recipe:**
 > *"Use `dsql-migrations` to add the migration(s) and SQLx repository methods for [table/query], keeping strictly one DDL statement per file and keyset pagination."*

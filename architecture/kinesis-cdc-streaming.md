@@ -6,7 +6,7 @@
 
 ## 1. Context & Aurora DSQL Database Constraints
 
-In event-driven microservice architectures, downstream consumers (such as `budget_service`, `planning_service`, and `notification_service`) must react to state mutations occurring in upstream services (such as `ledger_service` and `cards_service`).
+In event-driven microservice architectures, downstream consumers (such as `budget_service`, `planning_service`, and `notification_service`) must react to state mutations occurring in upstream services (such as `ledger_service` and `accounts_service`).
 
 Capturing database changes from **Amazon Aurora DSQL** differs fundamentally from traditional single-instance PostgreSQL:
 
@@ -215,7 +215,7 @@ If Approach 1 is selected, configuring the stream capacity mode determines the c
 
 ### Active Architecture: Direct Domain Event Publishing (`$0.00` Idle Cost)
 * **Strategy**: **Direct Domain Event Publishing to `familyledger-events-{env}`**.
-* **Action**: `backend/infrastructure/sam/data-stream-template.yaml` provisions only `FamilyLedgerEventBus` and least-privilege IAM roles (no Kinesis stream).
+* **Action**: `backend/infrastructure/sam/data-stream-template.yaml` provisions `FamilyLedgerEventBus`, least-privilege IAM roles, and `FamilyLedgerMigrateRunnerFunction` (no Kinesis stream).
 * **Cost**: **$0.00 / month** when idle ($1.00 per 1M published events).
 * **Rationale**: Maintains strict zero-idle serverless economics while delivering rich typed `DomainEvent` payloads (`Vec<DomainEvent>` returned by aggregate methods) directly to EventBridge in <25 ms.
 
@@ -229,8 +229,11 @@ If Approach 1 is selected, configuring the stream capacity mode determines the c
 
 ### Deploying / Updating the Zero-Cost Stack
 ```powershell
-cd backend/infrastructure/sam
-sam deploy --config-file samconfig-data.toml
+cd backend
+cargo lambda build --release --arm64 --package migrate_runner
+
+cd infrastructure\sam
+sam deploy --template-file data-stream-template.yaml --config-file samconfig-data.toml --capabilities CAPABILITY_NAMED_IAM
 ```
 
 ### Deleting the Data Stack

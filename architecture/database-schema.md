@@ -6,7 +6,7 @@ All tables and indexes conform to Aurora DSQL constraints:
 - **Semi-Structured Attributes**: Native `JSONB` data types for structured document storage (`permissions`, `frequency_config`, `projection`, `tags`).
 - **Deletions**: Soft-deletes (`deleted_at TIMESTAMPTZ NULL`) with `ON DELETE RESTRICT` semantics.
 - **Index Management**: Asynchronous index creation (`CREATE INDEX ASYNC`).
-- **Migration Format**: Single DDL statement per migration file.
+- **Migration Format**: Single DDL statement per migration file. *(SQL blocks below show canonical table/index definitions for readability; executable migration files in `backend/migrations/*.sql` prepend `-- no-transaction` on line 1 and use `IF NOT EXISTS`, enforced by `infrastructure/tests/migration_invariants.rs`.)*
 
 ---
 

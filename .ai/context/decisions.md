@@ -22,6 +22,6 @@ Chronological summary complementing formal Architecture Decision Records in [`do
 - **Alternatives rejected**: Chat-first always-on LLM orchestrator; full backend-generated UI everywhere.
 - **See**: [`0018-ai-native-modular-platform-and-sdui.md`](../../decisions/0018-ai-native-modular-platform-and-sdui.md)
 
-## 2026-11-20 — Declarative Behavior Specifications & AI-First Optimization (`ADR-0019`, Proposed)
+## 2026-11-20 — Declarative Behavior Specifications & AI-First Optimization (`ADR-0019`)
 - **Decision**: Introduce self-contained `backend/specs/` (Formats `T`/`U`/`P`) with human-owned `Approved` status, 4 automated CI guardrails in `backend/domain/tests/spec_traceability.rs` (blocking tests on `Draft` rules, `Origin: observed` approvals, and open-question approvals), blind test generation, and 7 zero-overlap skills across `documentation/` and `backend/`.
 - **See**: [`0019-declarative-test-specifications.md`](../../decisions/0019-declarative-test-specifications.md)

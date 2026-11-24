@@ -1,6 +1,6 @@
 # 0019. Declarative Behavior Specifications and AI-First Verification Workflow
 
-* **Status**: Proposed
+* **Status**: Accepted
 * **Date**: 2026-11-20
 * **Deciders**: Project Owner / AI Architecture Advisor
 
