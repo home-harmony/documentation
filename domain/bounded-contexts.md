@@ -46,10 +46,10 @@ Permission flags (only applicable to `Role::Other` members):
 - `ViewReports` — see analytics and family-level summaries
 
 Predefined roles have fixed permission sets (not configurable):
-- **`Owner`**: all permissions + family management
-- **`Member`**: all 8 permissions
-- **`Child`**: RecordOwnTransactions + ManageOwnAccounts (own accounts only)
-- **`Other`**: Owner-configured subset of the 8 flags, set at invite time. Stored as JSON array on `FamilyMember`.
+- **`Owner`**: all 8 ledger/view permissions + workspace read (`DomainAction::ViewFamilyWorkspace`) + family management (`DomainAction::ManageFamily`)
+- **`Member`**: all 8 ledger/view permissions + workspace read (`DomainAction::ViewFamilyWorkspace`)
+- **`Child`**: `RecordOwnTransactions` + `ManageOwnAccounts` (own accounts only) + workspace read (`DomainAction::ViewFamilyWorkspace`)
+- **`Other`**: workspace read (`DomainAction::ViewFamilyWorkspace`) + Owner-configured subset of the 8 flags, set at invite time. Stored as JSON array on `FamilyMember`.
 
 ---
 

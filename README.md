@@ -20,7 +20,7 @@ documentation/
 │   ├── system-overview.md             # Cloud architecture, AWS services & EventBridge domain events
 │   ├── aws-deployment-and-teardown.md # End-to-end AWS bootstrap, clean recreation & teardown runbook
 │   ├── aurora-dsql.md                 # Aurora DSQL constraints, OCC, IAM & migration rules
-│   ├── database-schema.md             # Complete DDL table (18) & async index (16) catalog
+│   ├── database-schema.md             # Complete DDL table (18) & async index (18) catalog
 │   ├── kinesis-cdc-streaming.md       # Event publishing analysis & Kinesis removal rationale (ADR-0017)
 │   ├── api-design.md                  # REST API routes, multi-family X-Family-Id & role permissions
 │   └── ai-native-platform-rethinking.md # Phased AI-native & SDUI architecture specification
@@ -56,8 +56,9 @@ documentation/
 │
 ├── roadmap/
 │   ├── business-plan.md               # MVP problem, solution, multi-currency scope & cost model
-│   ├── sprint-roadmap.md              # S1-S7 execution roadmap (34 migrations, ~15 weeks)
-│   └── sprint-1/sprint_1_summary.md   # Sprint 1 completion summary (AWS, Rust, 34 migrations)
+│   ├── sprint-roadmap.md              # S1-S7 execution roadmap (34+ migrations, ~15 weeks)
+│   ├── sprint-1/sprint_1_summary.md   # Sprint 1 completion summary (AWS, Rust, 34 migrations)
+│   └── sprint-2/sprint_2_plan.md      # Sprint 2 vertical-slice plan (Identity, Auth, Option B2 SAM)
 │
 └── testing/
     └── testing-strategy.md            # Test pyramid: Unit, Testcontainers PG, Axum, Spec Traceability
@@ -70,13 +71,14 @@ documentation/
 ### ☁️ AWS Bootstrap, Recreation & Teardown
 * **[AWS Bootstrap, Recreation & Teardown Guide](architecture/aws-deployment-and-teardown.md)** — Complete runbook to provision, recreate (after `ADR-0011` and `ADR-0017` refactorings), verify, and completely remove all AWS objects created in Sprint 1 (`Aurora DSQL`, `familyledger-core-dev`, `familyledger-data-dev`).
 * **[Sprint 1 Completion Summary](roadmap/sprint-1/sprint_1_summary.md)** — Delivered AWS infrastructure, Rust workspace, 34 Aurora DSQL migrations, and spec-driven governance.
+* **[Sprint 2 Execution Plan](roadmap/sprint-2/sprint_2_plan.md)** — Vertical-slice plan for `family_service`, multi-family `X-Family-Id` auth, `AU`/`FM` specs, and Option B2 3-stack SAM architecture.
 
 ### 🏛️ Architecture & Domain Model
 * **[System Architecture Overview](architecture/system-overview.md)** — Serverless topology, microservices inventory, and scheduled EventBridge flows.
 * **[Ubiquitous Language & Invariants](domain/ubiquitous-language.md)** — Canonical glossary, financial formulas (`True Disposable Surplus`, `DebtServiceCost`), and 10 non-negotiable domain invariants.
 * **[Bounded Contexts & Aggregates](domain/bounded-contexts.md)** — The 9 DDD bounded contexts and aggregate boundaries.
 * **[REST API Design](architecture/api-design.md)** — Endpoints, `X-Family-Id` multi-family tenancy, role permission matrix, and RFC 9457 error contracts.
-* **[Database Schema Catalog](architecture/database-schema.md)** — All 18 Aurora DSQL tables and 16 asynchronous indexes (`CREATE INDEX ASYNC`).
+* **[Database Schema Catalog](architecture/database-schema.md)** — All 18 Aurora DSQL tables and 18 asynchronous indexes (`CREATE INDEX ASYNC`).
 
 ### 🤖 AI-First & Spec-Driven Workflow
 * **[AGENTS.md](AGENTS.md)** & **[AI Development Guide](ai-development-guide.md)** — Entry point and practical playbooks for our 7 specialized skills (`domain-and-adr`, `spec-driven-dev`, `rust-patterns`, `rust-testing`, `dsql-migrations`, `diagnosing-bugs`, `code-review`).

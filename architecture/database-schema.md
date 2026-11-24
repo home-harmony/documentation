@@ -339,13 +339,15 @@ CREATE TABLE exchange_rates (
 
 ---
 
-## 2. Asynchronous Indexes (16 Indexes)
+## 2. Asynchronous Indexes (18 Indexes)
 
 Indexes are created asynchronously via `CREATE INDEX ASYNC` to respect Aurora DSQL rules (explicit `ASC`/`DESC` sort modifiers are omitted because Aurora DSQL index definitions do not support them; the planner uses backward index scans for `ORDER BY ... DESC`):
 
 ```sql
--- 1. Family Members
+-- 1. Family Members & Invite Tokens
 CREATE INDEX ASYNC idx_members_family ON family_members (family_id);
+CREATE INDEX ASYNC idx_members_user ON family_members (user_id);
+CREATE INDEX ASYNC idx_invite_tokens_family ON family_invite_tokens (family_id);
 
 -- 2. Payment Accounts
 CREATE INDEX ASYNC idx_accounts_family ON payment_accounts (family_id);

@@ -25,11 +25,11 @@ Sprint 7 (Week 15)    ──► E2E Test Suite, Multi-Tenant Security Audit, Loa
 * **Rust Multi-Crate Workspace**: Clean Architecture setup (`domain/`, `infrastructure/`, `api/`, `lambdas/`) with pinned dependencies (`sqlx 0.9.0`, `aurora-dsql-sqlx-connector 0.2.2`).
 * **Migration Runner Lambda (`migrate_runner`)**: Deploy embedded SQLx migrator and initial **34 individual SQL migrations** applying all 18 tables and 16 asynchronous indexes.
 
-### Sprint 2 (2 Weeks)
-* **Identity & Family Bounded Context**: `Family`, `FamilyMember`, and `InviteToken` aggregate roots.
+### [Sprint 2](sprint-2/sprint_2_plan.md) (2 Weeks) — 🚧 In Progress
+* **Identity & Family Bounded Context**: `Family`, `FamilyMember`, and `InviteToken` aggregate roots, RPITIT ports, and `lambdas/family_service`.
 * **Multi-Family Workspace Support**: Support users participating in multiple families via `X-Family-Id` context header (ADR-0011) and `GET /profile/families`.
 * **Granular Role-Based Permissions**: Implement fixed roles (`Owner`, `Member`, `Child`) and configurable `Permission` JSON flags for `Role::Other` (ADR-0011).
-* **Client Auth**: Angular SPA workspace switcher & login; Flutter mobile app login view.
+* **3-Stack SAM Deployment & Client Scope**: Deploy Option B2 (`core` + `data` + `services`) with non-admin `DSQL_USER` mapping. *(Angular Web SPA and Flutter Mobile UI login/switcher views are deferred to separate client repositories.)*
 
 ### Sprint 3 (3 Weeks)
 * **Payment Accounts Context**: `PaymentAccount` aggregate (Credit cards, Debit cards, Cash envelopes, Bank accounts) and `accounts_service`.
