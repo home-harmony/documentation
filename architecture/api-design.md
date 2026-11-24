@@ -44,7 +44,7 @@ DELETE /families/{id}/members/{mid}      # Owner only: soft-delete a family memb
 
 | Route | Auth Scope | Request Body | Success Response | Domain Events Emitted |
 | :--- | :--- | :--- | :--- | :--- |
-| `GET /profile/families` | `UserIdentity` | — | `200 OK` `{ items: [{ family_id, name, home_currency, role, display_name }] }` | — |
+| `GET /profile/families` | `UserIdentity` | — | `200 OK` `{ items: [{ family: { id, name, home_currency }, membership: { role, display_name } }] }` | — |
 | `POST /families` | `UserIdentity` | `{ name, home_currency, owner_display_name }` | `201 Created` `{ id, name, home_currency, owner_member_id, created_at }` | `FamilyCreated`, `MemberJoined` |
 | `GET /families/{id}` | `AuthClaims` (`ViewFamilyWorkspace`) | — | `200 OK` `{ id, name, home_currency, created_at }` | — |
 | `PUT /families/{id}` | `AuthClaims` (`ManageFamily`) | `{ name, home_currency }` | `200 OK` `{ id, name, home_currency, created_at }` | *(None — profile metadata update)* |
