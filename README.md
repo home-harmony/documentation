@@ -77,6 +77,7 @@ documentation/
 * **[Bounded Contexts & Aggregates](domain/bounded-contexts.md)** — The 9 DDD bounded contexts and aggregate boundaries.
 * **[REST API Design](architecture/api-design.md)** — Endpoints, `X-Family-Id` multi-family tenancy, role permission matrix, and RFC 9457 error contracts.
 * **[Database Schema Catalog](architecture/database-schema.md)** — All 18 Aurora DSQL tables and 16 asynchronous indexes (`CREATE INDEX ASYNC`).
+* **[Aurora DSQL Guide & Release Tracker](architecture/aurora-dsql.md)** — Architectural constraints, UUID v4/v7 strategy, OCC/read-only patterns, and [official Aurora DSQL release notes](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/release-notes.html) tracking.
 
 ### 🤖 AI-First & Spec-Driven Workflow
 * **[AGENTS.md](AGENTS.md)** & **[AI Development Guide](ai-development-guide.md)** — Entry point and practical playbooks for our 7 specialized skills (`domain-and-adr`, `spec-driven-dev`, `rust-patterns`, `rust-testing`, `dsql-migrations`, `diagnosing-bugs`, `code-review`).

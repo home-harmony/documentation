@@ -224,3 +224,34 @@ pub fn create_invite_token_id() -> Uuid {
     Uuid::new_v4()
 }
 ```
+
+---
+
+## 5. Tracking Aurora DSQL Releases & New Capabilities
+
+Aurora DSQL evolves rapidly with new PostgreSQL compatibility features, storage optimizations, and observability tools. Track upstream service updates via the official AWS release notes:
+
+- **Official Release Notes**: [Release notes for Aurora DSQL](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/release-notes.html)
+- **Last Reviewed**: `2026-11-25`
+
+### Notable Capabilities Relevant to FamilyLedger
+
+| Release Date | Capability | FamilyLedger Status & Opportunity |
+| :--- | :--- | :--- |
+| **2026-11-19** | **Higher write throughput** (up to 50% general, up to 200% for monotonically increasing PKs like UUID v7) | **Active automatically** (no cost/code change). Directly boosts our UUID v7 time-series tables (`ledger_transactions`, `debt_loan_payments`, `exchange_rates`). |
+| **2026-11-19** | **PL/pgSQL** (`CREATE FUNCTION`, `CREATE PROCEDURE`, `CALL`, `DO`) | **Watch / Avoid for domain logic**. Keep business rules in pure Rust (`domain/`, per ADR-0003); only consider for operational/admin routines if ever needed. |
+| **2026-11-18** | **Audit logging to S3** | **Future security option**. Can record cluster SQL statements to S3 if compliance/audit trails are needed in production. |
+| **2026-11-16** / **2026-08-17** | **Statement statistics (`STATEMENT_STATISTICS`) & Database Insights** | **Opt-in observability**. Exposes per-statement call counts, latency, and row metrics in CloudWatch Database Insights / PromQL (incurs CloudWatch charges; keep disabled unless tuning production queries). |
+| **2026-10-16** / **2026-07-08** | **CDC GA & envelope v1.1 (`transaction` field, write-set compaction)** | **Deferred (ADR-0017)**. Re-evaluate only if we outgrow direct EventBridge publishing and can justify Kinesis baseline costs. |
+| **2026-09-15** | **Partial indexes** (`CREATE INDEX ... WHERE ...`) | **High-value candidate**. Ideal for our soft-delete pattern (`WHERE deleted_at IS NULL`) to shrink secondary indexes and reduce DPU scan overhead on active rows. |
+| **2026-09-11** | **Batched nested-loop joins** | **Active automatically**. Reduces compute-to-storage round trips on selective joins (`Nested Loop (Batched Join)` in `EXPLAIN`). |
+| **2026-08-27** | **Extended statistics** (`CREATE STATISTICS`) | **Tuning option**. Can improve query planner row estimates on correlated multi-tenant columns (e.g. `(family_id, occurred_at)`). |
+| **2026-08-26** | **Foreign keys & `text`/`varchar` compression** | **Adopted**. Foreign keys are enforced across all 18 tables; text compression applies automatically to non-key columns. |
+| **2026-08-24–25** | **Expanded `SELECT FOR UPDATE` & `SELECT FOR KEY SHARE`** | **Available**. `FOR UPDATE` now works without full PK equality predicates and across multiple tables for stricter OCC conflict detection where needed. |
+| **2026-08-13** | **Indexes on expressions** | **Candidate**. Enables immutable expression indexes (e.g. `lower(name)`) for case-insensitive category/account search. |
+| **2026-08-03** / **2026-07-06** | **Expanded `ALTER TABLE`** (`DROP COLUMN`, `SET/DROP DEFAULT`, `DROP NOT NULL`, `ADD CONSTRAINT ... NOT VALID`, `ALTER TABLE ASYNC ... VALIDATE CONSTRAINT`) | **Available for future migrations**. Enables non-blocking schema evolution without table recreation. |
+| **2026-07-30** / **2025-11-20** | **DPU cost visibility/alerting & `EXPLAIN` DPU estimates** | **Recommended for cost control**. Use `EXPLAIN` DPU breakdowns and console DPU alerts to stay within the 100k DPU/month Free Tier. |
+| **2026-06-08** | **`JSONB` with compression** | **Adopted**. Used for `permissions`, `tags`, `frequency_config`, and `projection` with automatic compression. |
+| **2026-04-24** | **`ALTER DEFAULT PRIVILEGES`** | **High-value candidate**. Simplifies least-privilege IAM role setup (`DSQL_USER`) so newly migrated tables automatically grant required privileges without manual per-table `GRANT`s. |
+| **2026-03-31** | **Official Rust SQLx connector (`aurora-dsql-sqlx-connector`)** | **Adopted** (`v0.2.2`, IAM token refresh + OCC retry). |
+| **2026-02-03** | **Indexes on `NUMERIC`** | **Available**. Allows indexing `NUMERIC(19,4)` monetary columns if amount-range filtering is added later. |
