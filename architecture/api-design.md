@@ -6,15 +6,19 @@ All API endpoints are hosted via Amazon API Gateway HTTP API and secured with AW
 
 ## 1. Authentication & Security Rules
 
-1. **Bearer Token**: Every request must include `Authorization: Bearer <cognito_jwt>` in the HTTP headers.
-2. **User Identity & Multi-Family Isolation**: 
-   * User identity (`user_id` from `sub`, plus optional `email` when using Cognito ID tokens; Access Tokens carry `sub` without `email`) is extracted from the validated Cognito JWT claims.
-   * Multi-family workspace context is passed via the `X-Family-Id: <UUID>` request header for all family-scoped endpoints.
-   * Authorization middleware verifies that `user_id` is an active member of `family_id` with sufficient role/permissions (ADR-0011).
-3. **Idempotency**: All state-modifying endpoints (`POST` for transactions, payments, contributions) require a client-generated `idempotency_key: UUID`.
-4. **Pagination**: List endpoints use keyset pagination via opaque cursor tokens (`cursor=<base64>`). `OFFSET` is strictly banned (ADR-0002).
+1. **Bearer Token & Gateway Trust Boundary**: Every request must include `Authorization: Bearer <cognito_jwt>` in the HTTP headers.
+   * API Gateway HTTP API validates the Cognito RS256 signature, `iss`, `exp`, and `aud`/`client_id` at the edge.
+   * Production Rust Lambdas read verified claims from `requestContext.authorizer.jwt.claims` (never from raw unverified HTTP identity headers) and fail closed (`401 MISSING_CLAIMS`) if missing. Local/test execution uses `LocalJwtVerifier` (`jsonwebtoken`).
+2. **User Identity, Token Policy (Option 2B) & Multi-Family Isolation**: 
+   * `token_use == "access"` resolves [`AuthenticatedUser`](../../backend/api/src/auth.rs) (`user_id` from `sub`, `email: None`) for both native and Google-federated users.
+   * `token_use == "id"` is accepted **only** when `email_verified == "true"` (else `401 UNVERIFIED_EMAIL`), populating `email: Some(Email)`.
+   * Onboarding/profile routes (`GET /profile/families`, `POST /families`, `POST /families/{id}/members`) extract `AuthenticatedUser` without requiring `X-Family-Id`.
+   * Multi-family workspace context is passed via the `X-Family-Id: <UUID>` request header for all family-scoped endpoints (`400 MISSING_FAMILY_ID` / `INVALID_FAMILY_ID` if absent or malformed).
+   * Authorization middleware verifies that `user_id` is an active (`deleted_at IS NULL`) member of `family_id` in Aurora DSQL (`BEGIN READ ONLY`) and resolves sealed [`AuthClaims`](../../backend/api/src/auth.rs) (`403 USER_NOT_IN_FAMILY` if not an active member) per ADR-0011.
+3. **Idempotency**: All state-modifying endpoints (`POST` for transactions, payments, contributions) require a client-generated `idempotency_key: UUID` (uniqueness scoped per `(family_id, idempotency_key)`).
+4. **Pagination**: List endpoints use keyset pagination via opaque cursor tokens (`cursor=<base64>`) with `limit <= 50` enforced by `PageLimit`. `OFFSET` is strictly banned (ADR-0002).
 5. **Ledger Immutability**: `PUT /transactions/{id}` is prohibited (`405 Method Not Allowed`). Transaction adjustments use the amendment pattern (`POST /transactions/{id}/amend`, ADR-0012).
-6. **Error Responses (`application/problem+json` per RFC 9457)**: All error responses return RFC 9457 Problem Details containing `type`, `title`, `status`, `detail`, and a stable machine-readable `code` (e.g. `INSUFFICIENT_ROLE`, `TOKEN_EXPIRED`, `MEMBER_ALREADY_EXISTS`) mapped in `api/src/errors.rs` and `api/src/auth.rs` for frontend localization.
+6. **Error Responses (`application/problem+json` per RFC 9457) & Security Headers**: All error responses return RFC 9457 Problem Details containing `type`, `title`, `status`, `detail`, and a stable machine-readable `code` (e.g. `MISSING_CLAIMS`, `INVALID_CLAIMS`, `UNVERIFIED_EMAIL`, `MISSING_FAMILY_ID`, `INVALID_FAMILY_ID`, `USER_NOT_IN_FAMILY`, `INSUFFICIENT_ROLE`, `TOKEN_EXPIRED`, `MEMBER_ALREADY_EXISTS`) mapped in `api/src/errors.rs` and `api/src/auth.rs` for frontend localization, alongside `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
 
 ---
 

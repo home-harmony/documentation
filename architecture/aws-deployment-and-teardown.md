@@ -130,6 +130,43 @@ Because `familyledger-data-dev` creates named IAM roles (`familyledger-service-r
 
 ---
 
+## 3A. Post-Pull Verification Checklist (Machine with Docker, AWS SAM CLI & `cargo-lambda`)
+
+When pulling changes onto a workstation or CI runner that has **Docker**, **AWS SAM CLI**, **`cargo-lambda`**, and **`cargo-audit`** installed, run these checks in order before deploying:
+
+1. **Step A — Rust Lints, Unit Tests & Spec Traceability**:
+   ```bash
+   cd backend
+   cargo clippy --workspace --all-targets -- -D warnings
+   cargo test --workspace
+   ```
+2. **Step B — Docker PostgreSQL 16 Schema, Composite FK & Scoped Idempotency Integration Test**:
+   ```bash
+   # Requires Docker Desktop / daemon running
+   cargo test -p infrastructure --test migrations_pg -- --ignored --nocapture
+   ```
+3. **Step C — Dependency Vulnerability Audit**:
+   ```bash
+   cargo audit
+   ```
+4. **Step D — AWS SAM Template Validation & Linting (`cfn-lint`)**:
+   ```bash
+   cd infrastructure/sam
+   sam validate -t template.yaml --lint
+   sam validate -t data-stream-template.yaml --lint
+   ```
+5. **Step E — Cross-Compile Both ARM64 Lambda Binaries (`provided.al2023`)**:
+   ```bash
+   cd ../..
+   cargo lambda build --release --arm64 --package migrate_runner
+   cargo lambda build --release --arm64 --package cognito_pre_signup
+   ```
+6. **Step F — (Optional) Deploy & Verify Against Live Aurora DSQL**:
+   - If an existing dev Aurora DSQL cluster already has the old 34 migrations applied, **reset/recreate the cluster** (or drop the old tables and `_sqlx_migrations`) because baseline migrations `02`–`05`, `07`, `09`–`10`, and `12`–`17` were updated in-place.
+   - Deploy `familyledger-core-dev` and `familyledger-data-dev` (see Section 4), then invoke `familyledger-migrate-dev` and verify `"applied_now": 34, "active_async_jobs": 0`.
+
+---
+
 ## 4. How to Deploy (Bootstrap) the Entire System to AWS
 
 Follow these steps in order when bootstrapping a fresh environment or after running the complete teardown in [Section 6](#6-how-to-remove-teardown-all-aws-objects).
@@ -165,15 +202,19 @@ aws dsql get-cluster --identifier $DSQL_ID --region us-east-1
 
 ### Step 2: Deploy the Core Stack (`familyledger-core-dev`)
 
-Provisions Cognito User Pool, App Client, Hosted UI Domain, API Gateway HTTP API (`dev`), S3 SPA Bucket, CloudFront OAC, and CloudFront Distribution.
+Compiles the ARM64 Rust Cognito `PreSignUp` binary (`target/lambda/cognito_pre_signup/bootstrap`) and provisions the Cognito User Pool (with optional Google OIDC IdP and safe account-linking trigger), App Client, Hosted UI Domain, API Gateway HTTP API (`dev` with stage throttling and environment-gated CORS), S3 SPA Bucket, CloudFront OAC, Security Response Headers Policy, and CloudFront Distribution.
 
 ```powershell
-cd backend\infrastructure\sam
+# 1. Build the ARM64 Cognito PreSignUp Lambda binary
+cd backend
+cargo lambda build --release --arm64 --package cognito_pre_signup
 
-# 1. Validate the CloudFormation/SAM template
+cd infrastructure\sam
+
+# 2. Validate the CloudFormation/SAM template
 sam validate -t template.yaml --lint
 
-# 2. Deploy familyledger-core-dev
+# 3. Deploy familyledger-core-dev (optionally pass GoogleClientId / GoogleClientSecret via parameter-overrides)
 sam deploy `
   --template-file template.yaml `
   --config-file samconfig.toml `
@@ -247,7 +288,36 @@ Remove-Item target\migrate-response.json -Force
 CREATE ROLE familyledger_app WITH LOGIN;
 AWS IAM GRANT familyledger_app TO '<FamilyLedgerServiceRoleArn>';
 GRANT USAGE ON SCHEMA public TO familyledger_app;
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO familyledger_app;
+
+-- Read-only reference / system tables (no write access to _sqlx_migrations)
+GRANT SELECT ON TABLE
+  exchange_rates
+TO familyledger_app;
+
+-- Append-only tables (SELECT + INSERT only; no UPDATE/DELETE)
+GRANT SELECT, INSERT ON TABLE
+  account_balance_snapshots,
+  debt_loan_payments,
+  debt_repayment_plans,
+  recurring_payment_records,
+  goal_contributions
+TO familyledger_app;
+
+-- Mutable / soft-deletable domain tables (never grant privileges on _sqlx_migrations)
+GRANT SELECT, INSERT, UPDATE ON TABLE
+  family_families,
+  family_members,
+  family_invite_tokens,
+  payment_accounts,
+  ledger_categories,
+  ledger_transactions,
+  debt_loan_kinds,
+  debt_loans,
+  recurring_payments,
+  budget_monthly_budgets,
+  budget_envelopes,
+  planning_savings_goals
+TO familyledger_app;
 ```
 
 Set `DSQL_USER=familyledger_app` in runtime service Lambda environment variables.

@@ -37,22 +37,25 @@ CREATE TABLE family_members (
   relationship    VARCHAR(50),                    -- e.g. 'Grandma', 'Cousin'
   joined_at       TIMESTAMPTZ   NOT NULL DEFAULT now(),
   deleted_at      TIMESTAMPTZ,
-  UNIQUE (family_id, user_id)
+  UNIQUE (family_id, user_id),
+  UNIQUE (family_id, id)
 );
 ```
 
 #### `family_invite_tokens`
 ```sql
 CREATE TABLE family_invite_tokens (
-  token           UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  id              UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  token_hash      CHAR(64)      NOT NULL UNIQUE,
   family_id       UUID          NOT NULL REFERENCES family_families(id),
   role            VARCHAR(10)   NOT NULL CHECK (role IN ('member','child','other')),
   permissions     JSONB         NOT NULL DEFAULT '[]'::jsonb,  -- JSON array of Permission flags for Role::Other invites
   relationship    VARCHAR(50),
-  created_by      UUID          NOT NULL REFERENCES family_members(id),
+  created_by      UUID          NOT NULL,
   created_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
   expires_at      TIMESTAMPTZ   NOT NULL,
-  used            BOOLEAN       NOT NULL DEFAULT false
+  used            BOOLEAN       NOT NULL DEFAULT false,
+  FOREIGN KEY (family_id, created_by) REFERENCES family_members(family_id, id)
 );
 ```
 
@@ -65,7 +68,7 @@ CREATE TABLE family_invite_tokens (
 CREATE TABLE payment_accounts (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id           UUID          NOT NULL REFERENCES family_families(id),
-  owner_member_id     UUID          NOT NULL REFERENCES family_members(id),
+  owner_member_id     UUID          NOT NULL,
   name                VARCHAR(200)  NOT NULL,
   kind                VARCHAR(20)   NOT NULL CHECK (kind IN ('credit_card','debit_card','cash','bank_account')),
   currency            CHAR(3)       NOT NULL,
@@ -75,7 +78,9 @@ CREATE TABLE payment_accounts (
   color               VARCHAR(7),
   included_in_budget  BOOLEAN       NOT NULL DEFAULT true,
   created_at          TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  deleted_at          TIMESTAMPTZ
+  deleted_at          TIMESTAMPTZ,
+  UNIQUE (family_id, id),
+  FOREIGN KEY (family_id, owner_member_id) REFERENCES family_members(family_id, id)
 );
 ```
 
@@ -83,13 +88,14 @@ CREATE TABLE payment_accounts (
 ```sql
 CREATE TABLE account_balance_snapshots (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  account_id      UUID          NOT NULL REFERENCES payment_accounts(id),
+  account_id      UUID          NOT NULL,
   family_id       UUID          NOT NULL REFERENCES family_families(id),
   year_month      CHAR(7)       NOT NULL,  -- 'YYYY-MM', e.g. '2026-03'
   closing_balance NUMERIC(19,4) NOT NULL,
   currency        CHAR(3)       NOT NULL,
   computed_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  UNIQUE (account_id, year_month)
+  UNIQUE (account_id, year_month),
+  FOREIGN KEY (family_id, account_id) REFERENCES payment_accounts(family_id, id)
 );
 ```
 
@@ -115,22 +121,28 @@ CREATE TABLE ledger_categories (
 CREATE TABLE ledger_transactions (
   id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id                   UUID          NOT NULL REFERENCES family_families(id),
-  recorded_by                 UUID          NOT NULL REFERENCES family_members(id),
+  recorded_by                 UUID          NOT NULL,
   kind                        VARCHAR(20)   NOT NULL CHECK (kind IN ('income','expense','transfer','cash_withdrawal','loan_payment','reversal')),
   amount_value                NUMERIC(19,4) NOT NULL,
   amount_currency             CHAR(3)       NOT NULL,
-  source_account_id           UUID REFERENCES payment_accounts(id),       -- NULL for external income
-  destination_account_id      UUID REFERENCES payment_accounts(id),       -- NULL for external expense
+  source_account_id           UUID,                                       -- NULL for external income
+  destination_account_id      UUID,                                       -- NULL for external expense
   destination_amount_value    NUMERIC(19,4),                              -- cross-currency transfer
   destination_amount_currency CHAR(3),                                    -- cross-currency transfer
   category_id                 UUID REFERENCES ledger_categories(id),
-  amendment_of_id             UUID REFERENCES ledger_transactions(id),    -- NULL for original entries; points to corrected tx
+  amendment_of_id             UUID,                                       -- NULL for original entries; points to corrected tx
   tags                        JSONB         NOT NULL DEFAULT '[]'::jsonb, -- JSON array of tags
   description                 TEXT,
   occurred_at                 TIMESTAMPTZ   NOT NULL,
   created_at                  TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  idempotency_key             UUID          NOT NULL UNIQUE,
-  deleted_at                  TIMESTAMPTZ
+  idempotency_key             UUID          NOT NULL,
+  deleted_at                  TIMESTAMPTZ,
+  UNIQUE (family_id, id),
+  UNIQUE (family_id, idempotency_key),
+  FOREIGN KEY (family_id, recorded_by) REFERENCES family_members(family_id, id),
+  FOREIGN KEY (family_id, source_account_id) REFERENCES payment_accounts(family_id, id),
+  FOREIGN KEY (family_id, destination_account_id) REFERENCES payment_accounts(family_id, id),
+  FOREIGN KEY (family_id, amendment_of_id) REFERENCES ledger_transactions(family_id, id)
 );
 ```
 
@@ -162,7 +174,7 @@ CREATE TABLE debt_loans (
   name                  VARCHAR(200)  NOT NULL,
   lender                VARCHAR(200),
   loan_kind_id          UUID          NOT NULL REFERENCES debt_loan_kinds(id),
-  linked_account_id     UUID REFERENCES payment_accounts(id),
+  linked_account_id     UUID,
   principal_value       NUMERIC(19,4) NOT NULL,
   principal_currency    CHAR(3)       NOT NULL,
   balance_value         NUMERIC(19,4) NOT NULL,
@@ -175,7 +187,9 @@ CREATE TABLE debt_loans (
   expected_payoff_date  DATE,
   status                VARCHAR(20)   NOT NULL DEFAULT 'active' CHECK (status IN ('active','paid_off','paused')),
   created_at            TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  deleted_at            TIMESTAMPTZ
+  deleted_at            TIMESTAMPTZ,
+  UNIQUE (family_id, id),
+  FOREIGN KEY (family_id, linked_account_id) REFERENCES payment_accounts(family_id, id)
 );
 ```
 
@@ -183,7 +197,7 @@ CREATE TABLE debt_loans (
 ```sql
 CREATE TABLE debt_loan_payments (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  loan_id               UUID          NOT NULL REFERENCES debt_loans(id),
+  loan_id               UUID          NOT NULL,
   family_id             UUID          NOT NULL REFERENCES family_families(id),
   paid_at               DATE          NOT NULL,
   amount_value          NUMERIC(19,4) NOT NULL,
@@ -191,9 +205,12 @@ CREATE TABLE debt_loan_payments (
   principal_portion     NUMERIC(19,4) NOT NULL,
   interest_portion      NUMERIC(19,4) NOT NULL,
   remaining_balance     NUMERIC(19,4) NOT NULL,
-  linked_transaction_id UUID REFERENCES ledger_transactions(id),
+  linked_transaction_id UUID,
   created_at            TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  idempotency_key       UUID          NOT NULL UNIQUE
+  idempotency_key       UUID          NOT NULL,
+  UNIQUE (family_id, idempotency_key),
+  FOREIGN KEY (family_id, loan_id) REFERENCES debt_loans(family_id, id),
+  FOREIGN KEY (family_id, linked_transaction_id) REFERENCES ledger_transactions(family_id, id)
 );
 ```
 
@@ -228,14 +245,17 @@ CREATE TABLE recurring_payments (
   is_variable_amount   BOOLEAN       NOT NULL DEFAULT false,
   frequency            VARCHAR(20)   NOT NULL CHECK (frequency IN ('monthly','quarterly','annual','irregular')),
   frequency_config     JSONB         NOT NULL DEFAULT '{}'::jsonb,  -- JSON config
-  payment_account_id   UUID REFERENCES payment_accounts(id),
+  payment_account_id   UUID,
   category_id          UUID          NOT NULL REFERENCES ledger_categories(id),
-  linked_loan_id       UUID REFERENCES debt_loans(id),
+  linked_loan_id       UUID,
   next_due_date        DATE,
   is_active            BOOLEAN       NOT NULL DEFAULT true,
   notes                TEXT,
   created_at           TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  deleted_at           TIMESTAMPTZ
+  deleted_at           TIMESTAMPTZ,
+  UNIQUE (family_id, id),
+  FOREIGN KEY (family_id, payment_account_id) REFERENCES payment_accounts(family_id, id),
+  FOREIGN KEY (family_id, linked_loan_id) REFERENCES debt_loans(family_id, id)
 );
 ```
 
@@ -243,14 +263,17 @@ CREATE TABLE recurring_payments (
 ```sql
 CREATE TABLE recurring_payment_records (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  recurring_payment_id    UUID          NOT NULL REFERENCES recurring_payments(id),
+  recurring_payment_id    UUID          NOT NULL,
   family_id               UUID          NOT NULL REFERENCES family_families(id),
   actual_amount_value     NUMERIC(19,4) NOT NULL,
   actual_amount_currency  CHAR(3)       NOT NULL,
   paid_at                 DATE          NOT NULL,
-  linked_transaction_id   UUID REFERENCES ledger_transactions(id),
+  linked_transaction_id   UUID,
   created_at              TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  idempotency_key         UUID          NOT NULL UNIQUE
+  idempotency_key         UUID          NOT NULL,
+  UNIQUE (family_id, idempotency_key),
+  FOREIGN KEY (family_id, recurring_payment_id) REFERENCES recurring_payments(family_id, id),
+  FOREIGN KEY (family_id, linked_transaction_id) REFERENCES ledger_transactions(family_id, id)
 );
 ```
 
@@ -269,8 +292,10 @@ CREATE TABLE budget_monthly_budgets (
   status                      VARCHAR(20)   NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','active')),
   created_at                  TIMESTAMPTZ   NOT NULL DEFAULT now(),
   approved_at                 TIMESTAMPTZ,
-  approved_by                 UUID REFERENCES family_members(id),
-  UNIQUE (family_id, year_month)
+  approved_by                 UUID,
+  UNIQUE (family_id, year_month),
+  UNIQUE (family_id, id),
+  FOREIGN KEY (family_id, approved_by) REFERENCES family_members(family_id, id)
 );
 ```
 
@@ -278,13 +303,15 @@ CREATE TABLE budget_monthly_budgets (
 ```sql
 CREATE TABLE budget_envelopes (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  budget_id           UUID          NOT NULL REFERENCES budget_monthly_budgets(id),
+  family_id           UUID          NOT NULL REFERENCES family_families(id),
+  budget_id           UUID          NOT NULL,
   category_id         UUID          NOT NULL REFERENCES ledger_categories(id),
   limit_amount_value  NUMERIC(19,4) NOT NULL,
   limit_currency      CHAR(3)       NOT NULL,
   order_index         SMALLINT      NOT NULL DEFAULT 0,
   alert_threshold     SMALLINT      NOT NULL DEFAULT 80, -- percentage (80 = 80%)
-  UNIQUE (budget_id, category_id)
+  UNIQUE (budget_id, category_id),
+  FOREIGN KEY (family_id, budget_id) REFERENCES budget_monthly_budgets(family_id, id)
 );
 ```
 
@@ -297,12 +324,14 @@ CREATE TABLE planning_savings_goals (
   target_amount_value NUMERIC(19,4) NOT NULL,
   target_currency     CHAR(3)       NOT NULL,
   target_date         DATE,
-  linked_account_id   UUID REFERENCES payment_accounts(id),
+  linked_account_id   UUID,
   color               VARCHAR(7),
   icon                VARCHAR(50),
   status              VARCHAR(20)   NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress','achieved','cancelled')),
   created_at          TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  deleted_at          TIMESTAMPTZ
+  deleted_at          TIMESTAMPTZ,
+  UNIQUE (family_id, id),
+  FOREIGN KEY (family_id, linked_account_id) REFERENCES payment_accounts(family_id, id)
 );
 ```
 
@@ -310,14 +339,17 @@ CREATE TABLE planning_savings_goals (
 ```sql
 CREATE TABLE goal_contributions (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  goal_id               UUID          NOT NULL REFERENCES planning_savings_goals(id),
+  goal_id               UUID          NOT NULL,
   family_id             UUID          NOT NULL REFERENCES family_families(id),
   amount_value          NUMERIC(19,4) NOT NULL,
   amount_currency       CHAR(3)       NOT NULL,
   contributed_at        DATE          NOT NULL,
-  linked_transaction_id UUID REFERENCES ledger_transactions(id),
+  linked_transaction_id UUID,
   created_at            TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  idempotency_key       UUID          NOT NULL UNIQUE
+  idempotency_key       UUID          NOT NULL,
+  UNIQUE (family_id, idempotency_key),
+  FOREIGN KEY (family_id, goal_id) REFERENCES planning_savings_goals(family_id, id),
+  FOREIGN KEY (family_id, linked_transaction_id) REFERENCES ledger_transactions(family_id, id)
 );
 ```
 
