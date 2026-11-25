@@ -32,6 +32,7 @@ Test Pyramid
 * **Execution**: `cargo test -p infrastructure` (offline unit + `migration_invariants` checks); `cargo test -p infrastructure -- --ignored` (runs `#[ignore]`d Testcontainers PostgreSQL 16 tests; requires Docker active).
 * **Scope**:
   * Real SQL execution against a local PostgreSQL 16 container via `testcontainers`.
+  * Atomic aggregate `update` concurrency & serialization checks (single-use invite tokens, concurrent duplicate joins, profile update vs. soft-delete isolation, and >500-token history scaling).
   * Keyset cursor pagination encoding and query range verification.
   * Idempotent insert checks using unique idempotency keys.
   * Soft-delete query filtering (`WHERE deleted_at IS NULL`).

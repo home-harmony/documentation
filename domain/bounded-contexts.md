@@ -30,7 +30,7 @@ User identity mapping from AWS Cognito `sub`, family workspace aggregate root, a
 
 ### Aggregates & Entities
 - **`Family` (Aggregate Root)**: `id: FamilyId`, `name: FamilyName`, `home_currency: CurrencyCode`, `members: Vec<FamilyMember>`, `invite_tokens: Vec<InviteToken>`, `created_at: DateTime<Utc>`, `deleted_at: Option<DateTime<Utc>>`
-- **`FamilyMember`**: `id: MemberId`, `family_id: FamilyId`, `user_id: UserId`, `display_name: DisplayName`, `role: Role`, `permissions: Vec<Permission>`, `relationship: Option<Relationship>`, `joined_at: DateTime<Utc>`, `deleted_at: Option<DateTime<Utc>>`
+- **`FamilyMember`**: `id: MemberId`, `family_id: FamilyId`, `user_id: UserId`, `display_name: MemberDisplayName`, `role: Role`, `permissions: Vec<Permission>`, `relationship: Option<Relationship>`, `joined_at: DateTime<Utc>`, `deleted_at: Option<DateTime<Utc>>`
   - *Note: `permissions` is only relevant when `role = Other` (empty `[]` for predefined roles, whose permissions are derived directly from `Role`).*
 - **`InviteToken`**: `token: InviteTokenId`, `family_id: FamilyId`, `role: Role`, `permissions: Vec<Permission>`, `relationship: Option<Relationship>`, `created_by: MemberId`, `created_at: DateTime<Utc>`, `expires_at: DateTime<Utc>`, `used: bool`
 
@@ -46,10 +46,10 @@ Permission flags (only applicable to `Role::Other` members):
 - `ViewReports` — see analytics and family-level summaries
 
 Predefined roles have fixed permission sets (not configurable):
-- **`Owner`**: all permissions + family management
-- **`Member`**: all 8 permissions
-- **`Child`**: RecordOwnTransactions + ManageOwnAccounts (own accounts only)
-- **`Other`**: Owner-configured subset of the 8 flags, set at invite time. Stored as JSON array on `FamilyMember`.
+- **`Owner`**: all 8 ledger/view permissions + workspace read (`DomainAction::ViewFamilyWorkspace`) + family management (`DomainAction::ManageFamily`)
+- **`Member`**: all 8 ledger/view permissions + workspace read (`DomainAction::ViewFamilyWorkspace`)
+- **`Child`**: `RecordOwnTransactions` + `ManageOwnAccounts` (own accounts only) + workspace read (`DomainAction::ViewFamilyWorkspace`)
+- **`Other`**: workspace read (`DomainAction::ViewFamilyWorkspace`) + Owner-configured subset of the 8 flags, set at invite time. Stored as JSON array on `FamilyMember`.
 
 ---
 

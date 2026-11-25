@@ -32,7 +32,7 @@ sequenceDiagram
 | :--- | :--- | :--- | :--- |
 | `FamilyCreated` | Identity & Family | User creates workspace | Seeds default ledger categories |
 | `MemberInvited` | Identity & Family | Owner creates invite token | Delivers invite link / audit log |
-| `MemberJoined` | Identity & Family | Invite accepted | Refreshes family member cache |
+| `MemberJoined` | Identity & Family | Workspace created (`Owner`) or invite accepted | Refreshes family member cache |
 | `MemberRoleChanged` | Identity & Family | Owner modifies role/permissions | Updates active authorization cache |
 | `MemberRemoved` | Identity & Family | Member soft-deleted | Revokes active sessions |
 | `AccountRegistered` | Payment Cards & Accounts | New account added | Initializes account balance tracking |

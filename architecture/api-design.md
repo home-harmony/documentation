@@ -10,11 +10,13 @@ All API endpoints are hosted via Amazon API Gateway HTTP API and secured with AW
    * API Gateway HTTP API validates the Cognito RS256 signature, `iss`, `exp`, and `aud`/`client_id` at the edge.
    * Production Rust Lambdas read verified claims from `requestContext.authorizer.jwt.claims` (never from raw unverified HTTP identity headers) and fail closed (`401 MISSING_CLAIMS`) if missing. Local/test execution uses `LocalJwtVerifier` (`jsonwebtoken`).
 2. **User Identity, Token Policy (Option 2B) & Multi-Family Isolation**: 
-   * `token_use == "access"` resolves [`AuthenticatedUser`](../../backend/api/src/auth.rs) (`user_id` from `sub`, `email: None`) for both native and Google-federated users.
+   * `token_use == "access"` resolves [`UserIdentity`](../../backend/api/src/auth.rs) (`user_id` from `sub`, `email: None`) for both native and Google-federated users.
    * `token_use == "id"` is accepted **only** when `email_verified == "true"` (else `401 UNVERIFIED_EMAIL`), populating `email: Some(Email)`.
-   * Onboarding/profile routes (`GET /profile/families`, `POST /families`, `POST /families/{id}/members`) extract `AuthenticatedUser` without requiring `X-Family-Id`.
+   * Onboarding/profile routes (`GET /profile/families`, `POST /families`, `POST /families/{id}/members`) extract `UserIdentity` without requiring `X-Family-Id`.
    * Multi-family workspace context is passed via the `X-Family-Id: <UUID>` request header for all family-scoped endpoints (`400 MISSING_FAMILY_ID` / `INVALID_FAMILY_ID` if absent or malformed).
    * Authorization middleware verifies that `user_id` is an active (`deleted_at IS NULL`) member of `family_id` in Aurora DSQL (`BEGIN READ ONLY`) and resolves sealed [`AuthClaims`](../../backend/api/src/auth.rs) (`403 USER_NOT_IN_FAMILY` if not an active member) per ADR-0011.
+   * **Send the Cognito ID token (`IdToken`), not the Access Token**: the API Gateway `CognitoJwtAuthorizer` (`services-template.yaml`) sets `JwtConfiguration.Audience` to the web client ID, and only ID tokens carry the `aud` claim. Access tokens (which carry `client_id`, not `aud`) are rejected at the gateway with `401` before the Lambda runs. The Lambda extractor still treats `email` as optional.
+   * **CORS allow-list**: `X-Family-Id` is an allowed request header (alongside `Content-Type`, `Authorization`, `X-Amz-Date`, `X-Api-Key`). Allowed origins are the CloudFront URL exported by the `core` stack, plus `http://localhost:4200` in the `dev` environment only.
 3. **Idempotency**: All state-modifying endpoints (`POST` for transactions, payments, contributions) require a client-generated `idempotency_key: UUID` (uniqueness scoped per `(family_id, idempotency_key)`).
 4. **Pagination**: List endpoints use keyset pagination via opaque cursor tokens (`cursor=<base64>`) with `limit <= 50` enforced by `PageLimit`. `OFFSET` is strictly banned (ADR-0002).
 5. **Ledger Immutability**: `PUT /transactions/{id}` is prohibited (`405 Method Not Allowed`). Transaction adjustments use the amendment pattern (`POST /transactions/{id}/amend`, ADR-0012).
@@ -29,17 +31,38 @@ All API endpoints are hosted via Amazon API Gateway HTTP API and secured with AW
 GET    /profile/families                 # Authenticated user: list all families user belongs to (with role & display name)
 ```
 
-### 2.2 Family & Membership (Requires `X-Family-Id` header)
+### 2.2 Family & Membership
+*(Note: `POST /families` and `POST /families/{id}/members` require only `Authorization: Bearer` (`UserIdentity`); all other routes below require `X-Family-Id` matching `{id}`.)*
 ```http
 POST   /families                         # Authenticated user: creates a new family workspace (creator becomes Owner)
-GET    /families/{id}                    # Member+: get family workspace details and home currency
+GET    /families/{id}                    # Any active member (Owner/Member/Child/Other): get family workspace details and home currency
 PUT    /families/{id}                    # Owner only: update family name or home currency
 POST   /families/{id}/invites            # Owner only: generates invite link/token (payload includes optional permissions array for Role::Other)
 POST   /families/{id}/members            # Accept invite: adds authenticated user to family using invite token
-GET    /families/{id}/members            # Member+: list all active family members and roles
+GET    /families/{id}/members            # Any active member (Owner/Member/Child/Other): list all active family members and roles
 PATCH  /families/{id}/members/{mid}/role # Owner only: updates member role and/or custom permissions
 DELETE /families/{id}/members/{mid}      # Owner only: soft-delete a family member (cannot remove Owner)
 ```
+
+#### 2.2.1 Identity & Family Wire Contracts (`family_service`)
+
+| Route | Auth Scope | Request Body | Success Response | Domain Events Emitted |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET /profile/families` | `UserIdentity` | — | `200 OK` `{ items: [{ family: { id, name, home_currency }, membership: { role, display_name } }] }` | — |
+| `POST /families` | `UserIdentity` | `{ name, home_currency, owner_display_name }` | `201 Created` `{ id, name, home_currency, owner_member_id, created_at }` | `FamilyCreated`, `MemberJoined` |
+| `GET /families/{id}` | `AuthClaims` (`ViewFamilyWorkspace`) | — | `200 OK` `{ id, name, home_currency, created_at }` | — |
+| `PUT /families/{id}` | `AuthClaims` (`ManageFamily`) | `{ name, home_currency }` | `200 OK` `{ id, name, home_currency, created_at }` | *(None — profile metadata update)* |
+| `POST /families/{id}/invites` | `AuthClaims` (`ManageFamily`) | `{ role, permissions?: [], relationship?: string, ttl_hours?: i64 }` *(wire `role`: `"owner" \| "member" \| "child" \| "other"`; `permissions`: `["record_own_transactions", "record_any_transaction", "view_all_transactions", "view_all_accounts", "manage_own_accounts", "view_loans", "view_budget", "view_reports"]`; `ttl_hours` default `168`h = 7 days, max `720`h = 30 days)* | `201 Created` `{ token, family_id, role, permissions, relationship, created_by, created_at, expires_at }` | `MemberInvited` |
+| `POST /families/{id}/members` | `UserIdentity` | `{ token, display_name }` | `201 Created` `{ id, family_id, user_id, display_name, role, permissions, relationship, joined_at }` | `MemberJoined` |
+| `GET /families/{id}/members` | `AuthClaims` (`ViewFamilyWorkspace`) | — | `200 OK` `{ items: [{ id, family_id, user_id, display_name, role, permissions, relationship, joined_at }] }` *(active `deleted_at IS NULL` only)* | — |
+| `PATCH /families/{id}/members/{mid}/role` | `AuthClaims` (`ManageFamily`) | `{ role, permissions?: [] }` | `200 OK` `{ id, family_id, user_id, display_name, role, permissions, relationship, joined_at }` | `MemberRoleChanged` *(0 events on no-op)* |
+| `DELETE /families/{id}/members/{mid}` | `AuthClaims` (`ManageFamily`) | — | `204 No Content` | `MemberRemoved` |
+
+**Key RFC 9457 Error Codes (`application/problem+json`)**:
+- **Auth / Context (`api/src/auth.rs`)**: `401 MISSING_CLAIMS`, `401 INVALID_CLAIMS`, `400 MISSING_FAMILY_ID`, `400 INVALID_FAMILY_ID`, `403 USER_NOT_IN_FAMILY`, `403 FAMILY_ID_MISMATCH`, `403 INSUFFICIENT_ROLE`.
+- **Request / Infrastructure (`api/src/errors.rs`)**: `400 INVALID_JSON` *(malformed JSON, unknown enum values for `role`/`permissions`, or malformed body UUIDs)*, `400 INVALID_MEMBER_ID` *(non-UUID `{mid}` path parameter)*, `500 INTERNAL_ERROR` *(sanitized generic `detail`; real cause logged via `tracing::error!`)*.
+- **Domain / Lifecycle (`api/src/errors.rs`)**: `404 FAMILY_NOT_FOUND`, `404 MEMBER_NOT_FOUND`, `404 INVITE_TOKEN_NOT_FOUND`, `409 TOKEN_ALREADY_USED`, `409 MEMBER_ALREADY_EXISTS`, `409 DUPLICATE_OWNER`, `409 CANNOT_REMOVE_OWNER`, `410 FAMILY_DELETED`, `410 TOKEN_EXPIRED`, `422 INVALID_FAMILY_NAME` / `INVALID_DISPLAY_NAME` / `INVALID_CURRENCY_CODE` / `INVALID_EMAIL` / `INVALID_RELATIONSHIP` / `INVALID_INVITE_TTL` / `INVARIANT_VIOLATION`.
+- **Concurrency Semantics (`ADR-0020`, Proposed)**: Mutating family operations execute atomically with OCC retries; concurrent redemption of the same invite token yields one `201 Created` and `409 TOKEN_ALREADY_USED` for losing callers, and concurrent joins by the same user with distinct tokens yield one `201 Created` and `409 MEMBER_ALREADY_EXISTS` (never `500 INTERNAL_ERROR`).
 
 ### 2.3 Payment Accounts (Cards, Bank, Cash Envelopes)
 ```http

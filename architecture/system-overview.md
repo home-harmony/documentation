@@ -31,6 +31,24 @@ graph TD
     MigrateRunner[Migration Runner Lambda] -->|Schema DDL| DSQL
 ```
 
+### 1.1 AWS Stack & Deployment Dependency Graph (3-Stack DAG)
+
+Deployments follow a clean **3-stack 1-way DAG** separating stateful/edge infrastructure (`core`), data/event foundations (`data`), and stateless HTTP Lambdas (`services` — introduced in Sprint 2; see [`aws-deployment-and-teardown.md`](./aws-deployment-and-teardown.md) for full bootstrap/teardown commands):
+
+```mermaid
+flowchart TD
+    DSQL[("Aurora DSQL Cluster\n(AWS CLI)")]
+    Core["1. familyledger-core-dev\n(Cognito User Pool, S3 SPA, CloudFront CDN)"]
+    Data["2. familyledger-data-dev\n(EventBridge Bus, IAM Roles, migrate_runner Lambda)"]
+    Services["3. familyledger-services-dev\n(API Gateway HTTP API, family_service + S3-S6 Lambdas)"]
+
+    Core -.->|"Fn::ImportValue (Cognito + CDN Origin)"| Services
+    Data -.->|"Fn::ImportValue (ServiceRoleArn + EventBusName)"| Services
+    Data -->|"DDL Migrations (admin)"| DSQL
+    Services -->|"Read/Write OCC (DSQL_USER=familyledger_app)"| DSQL
+    Services -->|"events:PutEvents"| Data
+```
+
 ---
 
 ## 2. Infrastructure Components
