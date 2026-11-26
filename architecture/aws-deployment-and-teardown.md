@@ -84,7 +84,9 @@ flowchart TD
 
 ## 2. Prerequisites, Toolchain & Multi-Environment Configuration
 
-### 2.1 Local Toolchain (Windows PowerShell)
+### 2.1 Local Toolchain (Backend & Frontend)
+
+**PowerShell / Cross-Platform Prerequisites:**
 
 ```powershell
 aws --version          # AWS CLI v2
@@ -92,6 +94,8 @@ sam --version          # AWS SAM CLI
 cargo --version        # Rust toolchain
 cargo lambda --version # cargo-lambda >= 1.9.2 (install/update: scoop update cargo-lambda zig)
 zig version            # zig >= 0.17.1 (ARM64 Linux musl cross-compiler)
+node --version         # Node.js >= 22 (for frontend-web Angular SPA)
+pnpm --version         # pnpm >= 12 (for frontend-web Angular SPA)
 aws sts get-caller-identity
 ```
 
@@ -176,16 +180,22 @@ When pulling changes onto a workstation or CI runner that has **Docker**, **AWS 
    sam validate -t template.yaml --lint
    sam validate -t data-stream-template.yaml --lint
    ```
-5. **Step E — Cross-Compile Both ARM64 Lambda Binaries (`provided.al2023`)**:
+5. **Step E — Cross-Compile ARM64 Lambda Binaries (`provided.al2023`)**:
    ```bash
    cd ../..
    cargo lambda build --release --arm64 --package migrate_runner
    cargo lambda build --release --arm64 --package cognito_pre_signup
-    cargo lambda build --release --arm64 --package family_service
+   cargo lambda build --release --arm64 --package family_service
+   # Sprints 3-7: also build accounts_service, ledger_service, debt_planner_service, etc.
    ```
-6. **Step F — (Optional) Deploy & Verify Against Live Aurora DSQL**:
-   - If an existing dev Aurora DSQL cluster already has the old migrations applied, **reset/recreate the cluster** (or drop the old tables and `_sqlx_migrations`) because baseline migrations `02`–`05`, `07`, `09`–`10`, and `12`–`17` were updated in-place.
-   - Deploy `familyledger-core-dev` and `familyledger-data-dev` (see Section 4), then invoke `familyledger-migrate-dev` and verify `"applied_now": 34, "active_async_jobs": 0`.
+6. **Step F — Angular Web SPA Lint, Tests & Production Build (`frontend-web/`)**:
+   ```bash
+   cd ../frontend-web
+   pnpm install --frozen-lockfile
+   pnpm lint && pnpm test && pnpm build
+   ```
+7. **Step G — (Optional) Deploy & Verify Against Live AWS (`dev`)**:
+   - Deploy `familyledger-core-dev`, `familyledger-data-dev`, invoke `familyledger-migrate-dev`, deploy `familyledger-services-dev`, and sync `frontend-web/dist/family-ledger-web/browser` to S3 + CloudFront (see Section 3).
 
 ---
 
@@ -425,17 +435,62 @@ try { Invoke-WebRequest "$API_URL/profile/families" | Out-Null } catch { [int]$_
 
 ---
 
-### Step 8: Deploy Frontend Angular SPA (When Frontend Assets Are Ready)
+### Step 8: Build & Deploy Frontend Angular SPA (`frontend-web/`) to S3 + CloudFront
 
-Upload built Angular browser assets to the private S3 bucket and invalidate the CloudFront edge cache:
+Configures Cognito OAuth callback URLs for the deployed CDN domain (or your custom Route 53 + ACM HTTPS domain in `staging`/`prod`), injects runtime AWS stack outputs into `src/environments/environment.prod.ts`, compiles the production bundle, uploads hashed assets with immutable cache headers, and invalidates CloudFront.
+
+> [!IMPORTANT]
+> **CloudFront / Custom Domain Cognito Alignment (`staging` / `prod` and CloudFront-hosted `dev`)**:
+> Before signing in through the deployed CDN URL, confirm `familyledger-core-{env}` was deployed with `--parameter-overrides "Environment=$ENV CognitoCallbackUrl=https://<YOUR_APP_HOST>/auth/callback CognitoLogoutUrl=https://<YOUR_APP_HOST>/auth/logout"`, where `<YOUR_APP_HOST>` matches `$CLOUDFRONT_URL` (or your custom domain). Never commit real AWS endpoints into Git.
 
 ```powershell
+$FRONTEND_DIR = Join-Path (Split-Path $BACKEND_DIR -Parent) "frontend-web"
+$COGNITO_DOMAIN = "https://familyledger-$ENV-$ACCOUNT_ID.auth.$REGION.amazoncognito.com"
 $SPA_BUCKET = "familyledger-spa-$ENV-$ACCOUNT_ID"
 $DIST_ID = aws cloudformation list-stack-resources --stack-name "familyledger-core-$ENV" --region $REGION --query "StackResourceSummaries[?LogicalResourceId=='FamilyLedgerCdn'].PhysicalResourceId" --output text
 
-aws s3 sync .\frontend\dist\browser "s3://$SPA_BUCKET" --delete --region $REGION
+# 1. Generate production environment config (from Step 7 outputs)
+Set-Location $FRONTEND_DIR
+@"
+import type { AppConfig } from '../app/core/config/app-config';
+
+export const environment: AppConfig = {
+  production: true,
+  apiUrl: '$($API_URL.TrimEnd('/'))',
+  cognitoDomain: '$COGNITO_DOMAIN',
+  cognitoClientId: '$CLIENT_ID',
+  callbackUrl: '$CLOUDFRONT_URL/auth/callback',
+  logoutUrl: '$CLOUDFRONT_URL/auth/logout',
+};
+"@ | Set-Content -Path "src\environments\environment.prod.ts" -Encoding utf8
+
+# 2. Install, verify lint/tests, and build production bundle (dist/family-ledger-web/browser)
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm test
+pnpm build
+
+# 3. Upload hashed static assets with 1-year immutable cache control
+aws s3 sync "dist\family-ledger-web\browser" "s3://$SPA_BUCKET" `
+  --region $REGION `
+  --delete `
+  --exclude "index.html" `
+  --cache-control "public,max-age=31536000,immutable"
+
+# 4. Upload index.html with no-cache so edge clients always pick up new hashed bundles
+aws s3 cp "dist\family-ledger-web\browser\index.html" "s3://$SPA_BUCKET/index.html" `
+  --region $REGION `
+  --content-type "text/html; charset=utf-8" `
+  --cache-control "no-cache,no-store,must-revalidate"
+
+# 5. Invalidate CloudFront edge distribution & restore placeholder env file in git working tree
 aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/*"
+git checkout -- src\environments\environment.prod.ts
 ```
+
+Verify `$CLOUDFRONT_URL` in a browser: check DevTools Console for **zero CSP violations** against `FamilyLedgerSecurityHeadersPolicy` (`script-src 'self'`, `style-src 'self' 'unsafe-inline'`, `connect-src` allowing API Gateway & Cognito), verify deep-link reload on routes like `/workspace/members` and `/join`, and complete a login + workspace smoke check.
+
+*(For Sprint 2 `dev` step-by-step details including dual `localhost:4200` + CloudFront Cognito callbacks, see [`sprint-2/aws-deployment-guide.md` §8](../roadmap/sprint-2/aws-deployment-guide.md#8-step-8-sprint-2-angular-web-spa-frontend-web-deployment--live-verification).)*
 
 ---
 
@@ -461,6 +516,14 @@ sam validate -t services-template.yaml --lint
 sam deploy --template-file services-template.yaml --config-file samconfig-services.toml --stack-name "familyledger-services-$ENV"
 ```
 
+### 4.1B Routine Frontend SPA Deployments (`frontend-web/`)
+
+Whenever Angular SPA code in `frontend-web/` changes without requiring Cognito or API Gateway changes, deploy directly to S3 + CloudFront (leaving `core`, `data`, and `services` untouched):
+
+1. Inject the target `$ENV` outputs into `frontend-web/src/environments/environment.prod.ts` (Step 8 above).
+2. Run `pnpm lint && pnpm test && pnpm build`.
+3. Sync `dist/family-ledger-web/browser` (2-step cache headers) to `s3://familyledger-spa-$ENV-$ACCOUNT_ID`, run `aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/*"`, and `git checkout -- src/environments/environment.prod.ts`.
+
 ### 4.2 Applying New Schema Migrations
 
 Because `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO familyledger_app;` is configured during bootstrap, newly created `public` tables automatically grant access to runtime services:
@@ -469,13 +532,14 @@ Because `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE 
 2. Refresh offline SQLx metadata against Docker PG16 (`cargo sqlx prepare --workspace -- --all-targets`).
 3. Rebuild `migrate_runner`, deploy `familyledger-data-{env}`, and invoke `familyledger-migrate-{env}` (Steps 3–4 of Section 3).
 
-### 4.3 Adding a New Microservice Lambda (Sprints 3–7)
+### 4.3 Full-Product Expansion Roadmap (Sprints 3–7 & Custom Domains)
 
-When adding a new bounded-context Lambda (`accounts`, `ledger`, `debt`, `budget`, `recurring`, `planning`, `notifications`, `fx`):
+As remaining bounded contexts and clients ship across Sprints 3–7:
 
-1. Add the new crate under `backend/lambdas/<service>/` wrapping Axum with `tower::ServiceBuilder::new().map_request(api::auth::strip_apigw_stage_prefix)` for API Gateway stage stripping.
-2. Add the `AWS::Serverless::Function` block to `services-template.yaml` reusing `ServiceRoleArn`, `DSQL_ENDPOINT`, `DSQL_USER: familyledger_app`, and `EventBusName`.
-3. Build its ARM64 binary (`cargo lambda build --release --arm64 --package <service>`) and deploy `familyledger-services-{env}`.
+1. **New Bounded-Context Lambdas (Sprints 3–5)**: Add each new crate (`accounts_service`, `ledger_service`, `debt_planner_service`, `recurring_service`, `budget_service`, `planning_service`, `notification_service`, `exchange_rate_fetcher`) under `backend/lambdas/<service>/` wrapping Axum with `tower::ServiceBuilder::new().map_request(api::auth::strip_apigw_stage_prefix)`, wire its `AWS::Serverless::Function` block in `services-template.yaml` reusing `ServiceRoleArn`, `DSQL_ENDPOINT`, `DSQL_USER: familyledger_app`, and `EventBusName`, compile with `cargo lambda build --release --arm64 --package <service>`, and deploy `familyledger-services-{env}`.
+2. **EventBridge Schedules & Bus Rules (Sprints 3–5)**: Define EventBridge Scheduler rules (daily FX sync, month-end account snapshots, 1st-of-month draft budget seeding) and custom bus target rules on `FamilyLedgerEventBus` inside `services-template.yaml`.
+3. **AI-Native / SDUI Capabilities (Sprint 6+, `ADR-0018`)**: Add least-privilege `bedrock:InvokeModel` IAM statements on the dedicated AI assistant Lambda role and verify CSP `connect-src` in `template.yaml` covers any streaming endpoint introduced.
+4. **Custom Production Domain & Flutter Mobile OAuth Callbacks (`prod`)**: For a custom web domain (`app.<domain>`), attach an ACM certificate in `us-east-1` (`Aliases` + `ViewerCertificate`) to `FamilyLedgerCdn`, point Route 53 Alias records to CloudFront, and update `CognitoCallbackUrl`/`CognitoLogoutUrl` (and append Flutter Android custom scheme callbacks to `FamilyLedgerWebAppClient` or a dedicated mobile app client when mobile ships).
 
 ### 4.4 Upgrading Sprint 1 $\rightarrow$ Sprint 2
 

@@ -1,8 +1,8 @@
 # Sprint 2 AWS Deployment & Live Verification Guide — FamilyLedger (`dev`)
 
-> **Scope**: Copy-pasteable Windows PowerShell runbook for deploying **Sprint 2** (`family_service` + Option B2 3-stack SAM topology) onto an existing Sprint 1 `dev` AWS environment (`familyledger-core-dev`, `familyledger-data-dev`, and Amazon Aurora DSQL), bootstrapping the least-privilege `familyledger_app` database role, and verifying all 9 REST endpoints with live Cognito JWTs and `X-Family-Id` multi-family isolation.
+> **Scope**: Copy-pasteable Windows PowerShell (plus Bash equivalents for Step 8) runbook for deploying **Sprint 2** (`family_service` + Option B2 3-stack SAM topology + `frontend-web/` Angular SPA) onto an existing Sprint 1 `dev` AWS environment (`familyledger-core-dev`, `familyledger-data-dev`, and Amazon Aurora DSQL), bootstrapping the least-privilege `familyledger_app` database role, verifying all 9 REST endpoints, and running the Angular SPA against live AWS (`localhost:4200` or S3/CloudFront).
 >
-> For fresh account bootstrap, day-2 operations across all sprints, or complete teardown, see the overall product runbook: [`aws-deployment-and-teardown.md`](../../architecture/aws-deployment-and-teardown.md).
+> For fresh account bootstrap, day-2 operations across all sprints/environments, or complete teardown, see the overall product runbook: [`aws-deployment-and-teardown.md`](../../architecture/aws-deployment-and-teardown.md).
 
 ---
 
@@ -17,7 +17,8 @@ Upgrading from Sprint 1's 2-stack layout to Sprint 2's **Option B2 (3-Stack 1-Wa
 4. Update familyledger-core-dev FIRST (drops legacy FamilyLedgerApi; preserves Cognito/S3/CloudFront)
 5. Build family_service (ARM64) -> deploy familyledger-services-dev (API Gateway + family_service)
 6. Sync API_GATEWAY_URL to backend/.env.dev & backend/.aws-resources.md
-7. Run live Cognito IdToken + X-Family-Id smoke tests across all 9 endpoints + inspect CloudWatch logs
+7. Run live Cognito IdToken + X-Family-Id CLI smoke tests across all 9 endpoints + inspect CloudWatch logs
+8. Build/configure frontend-web Angular SPA -> run localhost:4200 OR sync to S3 + CloudFront + Browser E2E
 ```
 
 ---
@@ -575,4 +576,172 @@ sam delete --stack-name "familyledger-services-$ENV" --region $REGION
 ### Final Sprint 2 Git & Plan Sign-Off
 Once live verification passes:
 1. Check off the final two DoD items in [`sprint_2_plan.md`](./sprint_2_plan.md#5-sprint-2-definition-of-done-dod).
-2. Review `git status` in both `backend/` (including `backend/.sqlx/`) and `documentation/` and commit your branch changes.
+2. Review `git status` in `backend/` (including `backend/.sqlx/`), `frontend-web/` (making sure `src/environments/environment*.ts` placeholders were not overwritten with real AWS IDs), and `documentation/`, then commit your branch changes.
+
+---
+
+## 8. Step 8: Sprint 2 Angular Web SPA (`frontend-web/`) Deployment & Live Verification
+
+Execute this section on your AWS deployment machine once Steps 1–7 above are complete and `familyledger-core-dev` + `familyledger-services-dev` are live.
+
+### 8.1 Prerequisites on the Deployment Machine
+
+- **Node.js `>= 22`** and **`pnpm >= 12`** (`corepack enable` or npm global install)
+- **AWS CLI v2** authenticated against the target AWS account
+
+```bash
+node --version   # >= v22
+pnpm --version   # >= 12
+aws sts get-caller-identity
+```
+
+### 8.2 Collect Live `dev` Stack Outputs
+
+Run either **PowerShell** (continuing from Steps 0–7) or **Bash/Zsh**:
+
+**PowerShell:**
+```powershell
+$FRONTEND_DIR = Join-Path (Split-Path $BACKEND_DIR -Parent) "frontend-web"
+$USER_POOL_ID   = aws cloudformation describe-stacks --stack-name "familyledger-core-$ENV"     --region $REGION --query "Stacks[0].Outputs[?OutputKey=='CognitoUserPoolId'].OutputValue"     --output text
+$CLIENT_ID      = aws cloudformation describe-stacks --stack-name "familyledger-core-$ENV"     --region $REGION --query "Stacks[0].Outputs[?OutputKey=='CognitoWebAppClientId'].OutputValue" --output text
+$CLOUDFRONT_URL = aws cloudformation describe-stacks --stack-name "familyledger-core-$ENV"     --region $REGION --query "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue"         --output text
+$API_URL        = aws cloudformation describe-stacks --stack-name "familyledger-services-$ENV" --region $REGION --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayUrl'].OutputValue"         --output text
+$COGNITO_DOMAIN = "https://familyledger-$ENV-$ACCOUNT_ID.auth.$REGION.amazoncognito.com"
+$SPA_BUCKET     = "familyledger-spa-$ENV-$ACCOUNT_ID"
+$DIST_ID        = aws cloudformation list-stack-resources --stack-name "familyledger-core-$ENV" --region $REGION --query "StackResourceSummaries[?LogicalResourceId=='FamilyLedgerCdn'].PhysicalResourceId" --output text
+```
+
+**Bash / Zsh:**
+```bash
+export REGION="us-east-1"
+export ENV="dev"
+export ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+export USER_POOL_ID="$(aws cloudformation describe-stacks --stack-name "familyledger-core-$ENV" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='CognitoUserPoolId'].OutputValue" --output text)"
+export CLIENT_ID="$(aws cloudformation describe-stacks --stack-name "familyledger-core-$ENV" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='CognitoWebAppClientId'].OutputValue" --output text)"
+export CLOUDFRONT_URL="$(aws cloudformation describe-stacks --stack-name "familyledger-core-$ENV" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue" --output text)"
+export API_URL="$(aws cloudformation describe-stacks --stack-name "familyledger-services-$ENV" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayUrl'].OutputValue" --output text)"
+export COGNITO_DOMAIN="https://familyledger-${ENV}-${ACCOUNT_ID}.auth.${REGION}.amazoncognito.com"
+export SPA_BUCKET="familyledger-spa-${ENV}-${ACCOUNT_ID}"
+export DIST_ID="$(aws cloudformation list-stack-resources --stack-name "familyledger-core-$ENV" --region "$REGION" --query "StackResourceSummaries[?LogicalResourceId=='FamilyLedgerCdn'].PhysicalResourceId" --output text)"
+```
+
+> [!WARNING]
+> **Never commit live AWS account IDs or endpoints.** Leave `frontend-web/src/environments/environment*.ts` placeholders committed in Git and restore them with `git checkout -- src/environments/` after building/testing.
+
+### 8.3 Option A: Run SPA Locally (`http://localhost:4200`) Against Live AWS `dev`
+
+[`services-template.yaml`](../../../backend/infrastructure/sam/services-template.yaml) already permits `http://localhost:4200` in CORS when `Environment=dev`, and [`template.yaml`](../../../backend/infrastructure/sam/template.yaml) defaults Cognito callbacks to `http://localhost:4200/auth/{callback,logout}`.
+
+1. Populate `frontend-web/src/environments/environment.ts` locally:
+   ```ts
+   import type { AppConfig } from '../app/core/config/app-config';
+
+   export const environment: AppConfig = {
+     production: false,
+     apiUrl: '<API_URL without trailing slash, e.g. https://xxxx.execute-api.us-east-1.amazonaws.com/dev>',
+     cognitoDomain: '<COGNITO_DOMAIN>',
+     cognitoClientId: '<CLIENT_ID>',
+     callbackUrl: 'http://localhost:4200/auth/callback',
+     logoutUrl: 'http://localhost:4200/auth/logout',
+   };
+   ```
+2. Install dependencies, run local verification gates, and start the dev server:
+   ```bash
+   cd frontend-web
+   pnpm install --frozen-lockfile
+   pnpm lint && pnpm test
+   pnpm start
+   ```
+3. Open `http://localhost:4200` and execute the Browser Smoke Checklist in §8.5.
+
+### 8.4 Option B: Production Build & Deploy SPA to AWS S3 + CloudFront (`dev`)
+
+1. **Align Cognito Callback & Logout URLs with CloudFront**:
+   [`template.yaml`](../../../backend/infrastructure/sam/template.yaml) accepts a single `CognitoCallbackUrl` / `CognitoLogoutUrl`. If you want CloudFront **only**, redeploy `core` with overrides; if you want **both** `http://localhost:4200` and `$CLOUDFRONT_URL` during `dev` testing, update the User Pool Client directly via AWS CLI (remembering a subsequent `sam deploy` on `core` resets to the single CloudFormation parameter value):
+   ```powershell
+   # Keep BOTH CloudFront and localhost:4200 active in dev:
+   aws cognito-idp update-user-pool-client `
+     --user-pool-id $USER_POOL_ID `
+     --client-id $CLIENT_ID `
+     --region $REGION `
+     --allowed-o-auth-flows code `
+     --allowed-o-auth-flows-user-pool-client `
+     --allowed-o-auth-scopes openid email profile `
+     --supported-identity-providers COGNITO `
+     --explicit-auth-flows ALLOW_USER_SRP_AUTH ALLOW_REFRESH_TOKEN_AUTH `
+     --callback-ur-ls "$CLOUDFRONT_URL/auth/callback" "http://localhost:4200/auth/callback" `
+     --logout-ur-ls "$CLOUDFRONT_URL/auth/logout" "http://localhost:4200/auth/logout"
+   ```
+   *(If Google OIDC is configured via `GoogleClientId`, include `Google` alongside `COGNITO` in `--supported-identity-providers`.)*
+
+2. **Configure `frontend-web/src/environments/environment.prod.ts`**:
+   ```ts
+   import type { AppConfig } from '../app/core/config/app-config';
+
+   export const environment: AppConfig = {
+     production: true,
+     apiUrl: '<API_URL without trailing slash>',
+     cognitoDomain: '<COGNITO_DOMAIN>',
+     cognitoClientId: '<CLIENT_ID>',
+     callbackUrl: '<CLOUDFRONT_URL>/auth/callback',
+     logoutUrl: '<CLOUDFRONT_URL>/auth/logout',
+   };
+   ```
+
+3. **Run Quality Gates & Production Build**:
+   ```bash
+   cd frontend-web
+   pnpm install --frozen-lockfile
+   pnpm lint && pnpm test && pnpm build
+   ```
+   Confirm `dist/family-ledger-web/browser` exists and initial bundle budgets remain under `500 kB`.
+
+4. **Upload Assets to S3 (2-Step Cache Strategy) & Invalidate CloudFront**:
+   ```powershell
+   # 1. Sync hashed JS/CSS/font assets with immutable 1-year browser/CDN caching
+   aws s3 sync "$FRONTEND_DIR\dist\family-ledger-web\browser" "s3://$SPA_BUCKET" `
+     --region $REGION `
+     --delete `
+     --exclude "index.html" `
+     --cache-control "public,max-age=31536000,immutable"
+
+   # 2. Upload index.html with no-cache so new hashed chunks take effect immediately
+   aws s3 cp "$FRONTEND_DIR\dist\family-ledger-web\browser\index.html" "s3://$SPA_BUCKET/index.html" `
+     --region $REGION `
+     --content-type "text/html; charset=utf-8" `
+     --cache-control "no-cache,no-store,must-revalidate"
+
+   # 3. Invalidate CloudFront edge cache
+   aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/*"
+   ```
+   ```bash
+   # Equivalent Bash/Zsh commands:
+   aws s3 sync dist/family-ledger-web/browser "s3://${SPA_BUCKET}" \
+     --region "$REGION" --delete --exclude "index.html" \
+     --cache-control "public,max-age=31536000,immutable"
+   aws s3 cp dist/family-ledger-web/browser/index.html "s3://${SPA_BUCKET}/index.html" \
+     --region "$REGION" --content-type "text/html; charset=utf-8" \
+     --cache-control "no-cache,no-store,must-revalidate"
+   aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*"
+   ```
+
+5. **Restore Git Placeholders** (so AWS IDs do not stay dirty in your working tree):
+   ```bash
+   git -C frontend-web checkout -- src/environments/environment.ts src/environments/environment.prod.ts
+   ```
+
+### 8.5 Sprint 2 Live Browser E2E & Zero-CSP-Violation Smoke Checklist
+
+Test against `$CLOUDFRONT_URL` (or `http://localhost:4200`) using two browser profiles/incognito sessions (**User A Owner** and **User B Member/Other**):
+
+1. **Auth & Onboarding (User A)**: Open `$CLOUDFRONT_URL` -> redirected to Cognito Hosted UI PKCE login -> sign up / sign in with verified email -> land on `/onboarding` -> create workspace (`POST /families`) -> redirected to `/workspace` Overview.
+2. **Overview & Settings (User A)**: Open `/workspace/settings`, update family name and `HomeDisplayCurrency` (`PUT /families/{id}`), confirm top-bar currency badge updates immediately.
+3. **Owner Invite with Custom Permissions (User A)**: Click **Invite Member**, select **Other** (verify `Owner` is excluded), tick custom permissions (e.g., `view_budget`, `view_reports`), submit (`POST /families/{id}/invites`), copy `/join?familyId=...&token=...`.
+4. **Unauthenticated Deep-Link Join Round-Trip (User B)**: Paste `/join?familyId=...&token=...` into an incognito window -> redirected to Cognito Hosted UI -> sign in -> confirm auto-redirect back to `/join?...` -> enter display name -> submit (`POST /families/{id}/members` omitting `X-Family-Id`) -> confirm auto-activation into joined workspace.
+5. **Members Directory & Owner Governance**:
+   - **User B (`Other`)** navigates to `/workspace/members`: verify read-only banner is shown and `Invite Member` / `Edit Role` / `Remove` buttons are hidden.
+   - **User A (`Owner`)** navigates to `/workspace/members`: verify Owner row shows `Protected (Owner)`; change User B's role via **Edit Role** (`PATCH .../role`) -> verify table updates; remove User B via **Remove** (`DELETE .../members/{mid}`) -> verify User B disappears from roster.
+   - **User B** reloads `/workspace` or switches workspace -> confirm `403 USER_NOT_IN_FAMILY` eviction card appears cleanly with zero raw backend diagnostics leaked.
+6. **CloudFront CSP & Deep-Link Headers Check**:
+   - Reload browser directly on `$CLOUDFRONT_URL/workspace/members` and `$CLOUDFRONT_URL/join` -> confirm HTTP `200` (CloudFront 403/404 -> `/index.html`).
+   - Open DevTools Console & Network -> confirm **0 Content-Security-Policy (CSP) violations** under `FamilyLedgerSecurityHeadersPolicy` (`script-src 'self'`, `style-src 'self' 'unsafe-inline'`, `connect-src` allowing API Gateway & Cognito), clean EN/RU toggle, and all 4 OKLCH themes × Light/Dark work smoothly.
