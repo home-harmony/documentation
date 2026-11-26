@@ -30,3 +30,8 @@ Chronological summary complementing formal Architecture Decision Records in [`do
 - **Decision**: Split AWS SAM into three stacks with a one-way import DAG (`services` -> `core` & `data`): `core` (Cognito, S3, CloudFront), `data` (EventBridge bus, IAM roles, migrate runner), `services` (HTTP API + Lambdas). `FamilyLedgerApi` moved from `core` to `services`; `core` is deployed first to avoid two API Gateways and invoke-URL churn.
 - **See**: [`backend/infrastructure/sam/README.md`](../../../backend/infrastructure/sam/README.md) and [`0020-atomic-aggregate-update-port.md`](../../decisions/0020-atomic-aggregate-update-port.md) (*`Proposed`*: atomic `update` port + snapshot-diff writes on Aurora DSQL).
 
+## 2026-11-26 — Angular Web SPA Architecture, `spartan/ui` & Cognito PKCE (`ADR-0021`)
+- **Decision**: Build `frontend-web/` with Angular (standalone/signals/zoneless-ready), **`spartan/ui` 1.0 + Tailwind CSS**, **Cognito Hosted UI (OAuth 2.0 Authorization Code + PKCE)** sending `IdToken` (`email_verified == true`) + `X-Family-Id`, and **EN + RU i18n** with a typed RFC 9457 `error.code` dictionary compliant with CloudFront strict CSP.
+- **Alternatives rejected**: Sub-1.0 lightweight Angular UI libraries lacking charts (`Guild of Gleks UI`, `ng-oat`, `Frakton NG`, `eagami/ui`, `Revo UI`); heavyweight suites + custom SRP auth screens in Sprint 2.
+- **See**: [`0021-angular-spa-architecture-and-ui-library.md`](../../decisions/0021-angular-spa-architecture-and-ui-library.md) and [`sprint_2_ui_plan.md`](../../roadmap/sprint-2/sprint_2_ui_plan.md).
+

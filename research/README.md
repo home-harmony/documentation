@@ -30,3 +30,10 @@ This directory stores **Phase 1 factual investigation notes** produced before pr
 ## Sources
 - [Primary Source Title](url)
 ```
+
+---
+
+## Planned Post-MVP Investigations
+
+- **STRIDE Threat Modeling**: End-to-end threat analysis across Cognito JWT + `X-Family-Id` tenant boundaries, Aurora DSQL IAM auth, EventBridge, Angular SPA (CSP/PKCE), and future Bedrock/MCP surfaces (`ADR-0018`).
+- **GDPR & Privacy Compliance (incl. Child Protection)**: EU GDPR Article 8 parental consent for `Role::Child`, minor-profile data minimization, right to erasure (`DSAR` anonymization/crypto-shredding vs. immutable ledger `ADR-0012`), portability export, and EU residency.

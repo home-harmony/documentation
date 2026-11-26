@@ -29,7 +29,7 @@ Sprint 7 (Week 15)    ──► E2E Test Suite, Multi-Tenant Security Audit, Loa
 * **Identity & Family Bounded Context**: `Family`, `FamilyMember`, and `InviteToken` aggregate roots, RPITIT ports, and `lambdas/family_service`.
 * **Multi-Family Workspace Support**: Support users participating in multiple families via `X-Family-Id` context header (ADR-0011) and `GET /profile/families`.
 * **Granular Role-Based Permissions**: Implement fixed roles (`Owner`, `Member`, `Child`) and configurable `Permission` JSON flags for `Role::Other` (ADR-0011).
-* **3-Stack SAM Deployment & Client Scope**: Deploy Option B2 (`core` + `data` + `services`) with non-admin `DSQL_USER` mapping. *(Angular Web SPA and Flutter Mobile UI login/switcher views are deferred to separate client repositories.)*
+* **3-Stack SAM Deployment & Angular Web UI**: Deploy Option B2 (`core` + `data` + `services`) with non-admin `DSQL_USER` mapping, and deliver the Sprint 2 Angular Web SPA ([`sprint_2_ui_plan.md`](sprint-2/sprint_2_ui_plan.md)) in `frontend-web/` (`spartan/ui`, Cognito Hosted UI PKCE, multi-family switcher, member governance, EN/RU i18n). *(Flutter Mobile UI remains deferred to `frontend-mobile/`.)*
 
 ### Sprint 3 (3 Weeks)
 * **Payment Accounts Context**: `PaymentAccount` aggregate (Credit cards, Debit cards, Cash envelopes, Bank accounts) and `accounts_service`.
@@ -62,3 +62,12 @@ Sprint 7 (Week 15)    ──► E2E Test Suite, Multi-Tenant Security Audit, Loa
 * **Comprehensive E2E Testing**: Automated test suite executing against real AWS test environment.
 * **Security & Multi-Tenant Isolation Audit**: Verify strict role enforcement (`Role::Child` access blocks, `Role::Other` permission checks, and cross-family tenant boundary isolation).
 * **Production Release Readiness**: Final performance validation, documentation verification, and family beta launch.
+
+---
+
+## Post-MVP Future Investigations
+
+Tracked for Phase 2 / post-MVP security & compliance spikes (`documentation/research/`):
+
+* **STRIDE Threat Modeling**: Systematic Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, and Elevation of Privilege threat analysis across Cognito JWT + `X-Family-Id` multi-family isolation, Aurora DSQL / IAM roles, EventBridge event flows, Angular Web SPA (CloudFront CSP & OAuth2 PKCE), and future AWS Bedrock / MCP tool surfaces (`ADR-0018`).
+* **GDPR & Privacy Compliance (incl. Child Protection)**: EU GDPR Article 8 parental consent & age-verification workflows for `Role::Child` accounts, data minimization for minor profiles, right to erasure (`DSAR` anonymization / crypto-shredding reconciled with soft-delete and immutable ledger `ADR-0012`), data export/portability, retention policies, and EU AWS region residency options.
