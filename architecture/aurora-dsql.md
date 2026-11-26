@@ -29,12 +29,12 @@ Amazon Aurora DSQL is a distributed, serverless relational database offering act
 
 ## 3. Rust Integration (`aurora-dsql-sqlx-connector`)
 
-We use version **`0.2.2`** of the official AWS connector with SQLx **`0.9.0`**:
+We use version **`0.2.2`** of the official AWS connector with SQLx **`0.9.1`**:
 
 ```toml
 # backend/Cargo.toml
 [workspace.dependencies]
-sqlx = { version = "0.9.0", features = ["postgres", "runtime-tokio", "tls-rustls-ring", "macros", "migrate", "uuid", "chrono", "rust_decimal", "json"] }
+sqlx = { version = "0.9.1", features = ["postgres", "runtime-tokio", "tls-rustls-ring", "macros", "migrate", "uuid", "chrono", "rust_decimal", "json"] }
 aurora-dsql-sqlx-connector = { version = "0.2.2", features = ["pool", "occ"] }
 ```
 
