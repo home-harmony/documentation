@@ -28,14 +28,22 @@ Chronological summary complementing formal Architecture Decision Records in [`do
 
 ## 2026-11-24 - Option B2 3-Stack SAM Layout (`core` + `data` + `services`)
 - **Decision**: Split AWS SAM into three stacks with a one-way import DAG (`services` -> `core` & `data`): `core` (Cognito, S3, CloudFront), `data` (EventBridge bus, IAM roles, migrate runner), `services` (HTTP API + Lambdas). `FamilyLedgerApi` moved from `core` to `services`; `core` is deployed first to avoid two API Gateways and invoke-URL churn.
-- **See**: [`backend/infrastructure/sam/README.md`](../../../backend/infrastructure/sam/README.md) and [`0020-atomic-aggregate-update-port.md`](../../decisions/0020-atomic-aggregate-update-port.md) (*`Proposed`*: atomic `update` port + snapshot-diff writes on Aurora DSQL).
+- **See**: [`backend/infrastructure/sam/README.md`](../../../backend/infrastructure/sam/README.md) and [`0020-atomic-aggregate-update-port.md`](../../decisions/0020-atomic-aggregate-update-port.md) (*`Accepted`*: atomic `update` port + snapshot-diff writes on Aurora DSQL).
 
 ## 2026-11-26 — Angular Web SPA Architecture, `spartan/ui` & Cognito PKCE (`ADR-0021`)
 - **Decision**: Build `frontend-web/` with Angular (standalone/signals/zoneless-ready), **`spartan/ui` 1.0 + Tailwind CSS**, **Cognito Hosted UI (OAuth 2.0 Authorization Code + PKCE)** sending `IdToken` (`email_verified == true`) + `X-Family-Id`, and **EN + RU i18n** with a typed RFC 9457 `error.code` dictionary compliant with CloudFront strict CSP.
 - **Alternatives rejected**: Sub-1.0 lightweight Angular UI libraries lacking charts (`Guild of Gleks UI`, `ng-oat`, `Frakton NG`, `eagami/ui`, `Revo UI`); heavyweight suites + custom SRP auth screens in Sprint 2.
 - **See**: [`0021-angular-spa-architecture-and-ui-library.md`](../../decisions/0021-angular-spa-architecture-and-ui-library.md) and [`sprint_2_ui_plan.md`](../../roadmap/sprint-2/sprint_2_ui_plan.md).
 
-## 2026-11-27 — Frontend Bounded-Context Slices, Suffixless Role Folders & 3-Layer CSS (`ADR-0022`, *Proposed*)
-- **Proposal**: Refactor `frontend-web/` before Sprint 3 into progressive DDD bounded-context slices (`core/` $\leftarrow$ `shared/` $\leftarrow$ `features/<context>/`), Angular 20+ suffixless filenames inside explicit role folders (`pages/`, `components/`, `services/`, `stores/`, `guards/`, `interceptors/`, `pipes/`, `models/`, `utils/`), multi-file non-trivial components with 3-layer styling (`spartan/ui` primitives $\rightarrow$ `@layer components` `.fl-*` $\rightarrow$ component native CSS + OKLCH `var(--*)`), and a symmetric `frontend-web/.ai/` rules/skills structure.
+## 2026-11-27 — Frontend Bounded-Context Slices, Suffixless Role Folders & 3-Layer CSS (`ADR-0022`)
+- **Decision**: Organize `frontend-web/` into progressive DDD bounded-context slices (`core/` $\leftarrow$ `shared/` $\leftarrow$ `features/<context>/`), Angular 20+ suffixless filenames inside explicit role folders (`pages/`, `components/`, `services/`, `stores/`, `guards/`, `interceptors/`, `pipes/`, `models/`, `utils/`), multi-file non-trivial components with 3-layer styling (`spartan/ui` primitives $\rightarrow$ `@layer components` `.fl-*` $\rightarrow$ component native CSS + OKLCH `var(--*)`), and a symmetric `frontend-web/.ai/` rules/skills structure.
 - **See**: [`0022-frontend-web-structure-and-styling.md`](../../decisions/0022-frontend-web-structure-and-styling.md).
+
+## 2026-11-27 — Sprint 3 Phase 0 Domain & Accounting Alignment (`P0-1` – `P0-13`)
+- **Decisions**:
+  - Rename `Role::Other` (`'other'`) end-to-end to **`Role::Guest`** (`'guest'`, UI `"Guest"` / `«Гость»`) across Ubiquitous Language, specs, Aurora DSQL constraints, Rust backend, and Angular SPA.
+  - Propagate `member_id` into `MemberAccess` / `AuthClaims` and enrich `GET /profile/families` with `member_id` + `permissions`.
+  - Keep `original.deleted_at = NULL` on `TransactionAmendment` (`ADR-0012`) and swap both accounts and dual amounts on cross-currency `Reversal` rows so `ADR-0006` snapshot balance derivation never double-negates or mixes currencies; derive deterministic SHA-256 companion `idempotency_key`s for `Reversal` rows.
+  - Add `SignedMoney` (signed balances/snapshots/`FXSpread`), `PositiveMoney` (`> 0` transaction amounts), and immutable `opening_balance` on `payment_accounts`; seed global system `ledger_categories` (`family_id IS NULL`) via an idempotent Rust step in `migrate_runner` (zero DML in `.sql` migrations).
+- **See**: [`sprint_3_plan.md`](../../roadmap/sprint-3/sprint_3_plan.md), [`0006`](../../decisions/0006-account-balance-snapshot.md), [`0011`](../../decisions/0011-multi-family-membership.md), and [`0012`](../../decisions/0012-immutable-ledger-transactions.md).
 

@@ -34,11 +34,11 @@ Transactions in `ledger_transactions` are strictly append-only and immutable. On
 ### Correction Workflow (`POST /transactions/{id}/amend`)
 
 To correct an inaccurate transaction:
-1. The user invokes `POST /transactions/{id}/amend` with the revised payload.
-2. The domain creates two new linked immutable records in a single unit of work:
-   * **Reversal Entry**: An exact mirror of the original transaction with `kind = 'reversal'`, which offsets the financial impact of the original. It sets `amendment_of_id = original.id`.
-   * **Corrected Entry**: A new transaction containing the corrected amounts, categories, or accounts, also setting `amendment_of_id = original.id`.
-3. The original transaction is marked with `deleted_at = now()` (soft-delete) to hide it from standard UI transaction feeds while preserving it in historical audit logs.
+1. The user invokes `POST /transactions/{id}/amend` with the revised payload and a client `idempotency_key` (stored on the **Corrected Entry**; the **Reversal Entry** receives a deterministic SHA-256 companion UUID derived from `(family_id, idempotency_key)` so `UNIQUE (family_id, idempotency_key)` is satisfied cleanly).
+2. The domain creates two new linked immutable records in a single atomic OCC unit of work:
+   * **Reversal Entry**: An exact accounting negation of the original transaction with `kind = 'reversal'` and `amendment_of_id = original.id`. It swaps `source_account_id` ↔ `destination_account_id` (and, for cross-currency transfers/withdrawals where `destination_amount` is present, also swaps `amount` ↔ `destination_amount` so each leg stays in its account's native currency).
+   * **Corrected Entry**: A new transaction (with `TransactionId` UUID v7 ordered strictly after the `Reversal` entry) containing the corrected amounts, categories, or accounts, also setting `amendment_of_id = original.id`.
+3. **Preserving `original.deleted_at = NULL` for Snapshot Balance Integrity (`ADR-0006`)**: Amending an original transaction intentionally keeps `original.deleted_at = NULL` (reserving `deleted_at = now()` strictly for `DELETE /transactions/{id}`). Because `original + Reversal == 0`, same-month balance sums cancel out without double-negation, **and** amending a transaction from a prior closed month naturally applies the net adjustment after that month's `AccountBalanceSnapshot` without rewriting historical snapshots. Default list views (`GET /transactions`) exclude superseded originals (any row referenced by an active `Reversal`'s `amendment_of_id`) and `Reversal` rows unless `?include_audit=true` is requested.
 
 ### Schema Support in `ledger_transactions`
 

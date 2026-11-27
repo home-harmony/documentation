@@ -31,16 +31,16 @@ User identity mapping from AWS Cognito `sub`, family workspace aggregate root, a
 ### Aggregates & Entities
 - **`Family` (Aggregate Root)**: `id: FamilyId`, `name: FamilyName`, `home_currency: CurrencyCode`, `members: Vec<FamilyMember>`, `invite_tokens: Vec<InviteToken>`, `created_at: DateTime<Utc>`, `deleted_at: Option<DateTime<Utc>>`
 - **`FamilyMember`**: `id: MemberId`, `family_id: FamilyId`, `user_id: UserId`, `display_name: MemberDisplayName`, `role: Role`, `permissions: Vec<Permission>`, `relationship: Option<Relationship>`, `joined_at: DateTime<Utc>`, `deleted_at: Option<DateTime<Utc>>`
-  - *Note: `permissions` is only relevant when `role = Other` (empty `[]` for predefined roles, whose permissions are derived directly from `Role`).*
-- **`InviteToken`**: `token: InviteTokenId`, `family_id: FamilyId`, `role: Role`, `permissions: Vec<Permission>`, `relationship: Option<Relationship>`, `created_by: MemberId`, `created_at: DateTime<Utc>`, `expires_at: DateTime<Utc>`, `used: bool`
+  - *Note: `permissions` is only relevant when `role = Guest` (empty `[]` for predefined roles, whose permissions are derived directly from `Role`).*
+- **`InviteToken`**: `id: InviteId`, `token_hash: InviteTokenHash`, `family_id: FamilyId`, `role: Role`, `permissions: Vec<Permission>`, `relationship: Option<Relationship>`, `created_by: MemberId`, `created_at: DateTime<Utc>`, `expires_at: DateTime<Utc>`, `used: bool`
 
 ### Permissions & Roles
-Permission flags (only applicable to `Role::Other` members):
-- `RecordOwnTransactions` — record/edit transactions on own accounts
-- `RecordAnyTransaction` — record on any family account (e.g. shared card)
+Permission flags (only applicable to `Role::Guest` members):
+- `RecordOwnTransactions` — record/amend/delete transactions on own accounts
+- `RecordAnyTransaction` — record/amend/delete on any family account and manage custom categories
 - `ViewAllTransactions` — see all family transactions, not just own
 - `ViewAllAccounts` — see all family accounts, not just own
-- `ManageOwnAccounts` — add/edit own payment instruments
+- `ManageOwnAccounts` — add/edit/delete own payment instruments
 - `ViewLoans` — see loans and debt repayment plans
 - `ViewBudget` — see monthly budget and envelopes
 - `ViewReports` — see analytics and family-level summaries
@@ -49,42 +49,47 @@ Predefined roles have fixed permission sets (not configurable):
 - **`Owner`**: all 8 ledger/view permissions + workspace read (`DomainAction::ViewFamilyWorkspace`) + family management (`DomainAction::ManageFamily`)
 - **`Member`**: all 8 ledger/view permissions + workspace read (`DomainAction::ViewFamilyWorkspace`)
 - **`Child`**: `RecordOwnTransactions` + `ManageOwnAccounts` (own accounts only) + workspace read (`DomainAction::ViewFamilyWorkspace`)
-- **`Other`**: workspace read (`DomainAction::ViewFamilyWorkspace`) + Owner-configured subset of the 8 flags, set at invite time. Stored as JSON array on `FamilyMember`.
+- **`Guest`**: workspace read (`DomainAction::ViewFamilyWorkspace`) + Owner-configured subset of the 8 flags, set at invite time (stored as JSON array on `FamilyMember`; UI label `"Guest"` / `«Гость»`).
 
 ---
 
 ## 2. Payment Cards & Accounts Context
 
 ### Responsibility
-Registry of all payment instruments across family members (Credit Cards, Debit Cards, Cash Envelopes, Bank Accounts) and their tracked balances.
+Registry of all payment instruments across family members (Credit Cards, Debit Cards, Cash Envelopes, Bank Accounts) and their derived balances.
 *Note: The table is `payment_accounts` and the service is `accounts_service`.*
 
 ### Aggregates & Entities
 - **`PaymentAccount` (Aggregate Root)**:
-  - `id: AccountId`
+  - `id: AccountId` (UUID v4)
   - `family_id: FamilyId`
-  - `owner_member_id: MemberId`
-  - `name: String`
-  - `kind: AccountKind` (`CreditCard`, `DebitCard`, `Cash`, `BankAccount`)
-  - `currency: CurrencyCode`
-  - `credit_limit: Option<Money>`
+  - `owner_member_id: MemberId` (immutable after creation)
+  - `name: AccountName` (`1..=200` chars)
+  - `kind: AccountKind` (`CreditCard`, `DebitCard`, `Cash`, `BankAccount` — immutable after creation)
+  - `currency: CurrencyCode` (immutable after creation)
+  - `opening_balance: SignedMoney` (immutable baseline set once at creation, defaults to `0` — never mutated on transactions)
+  - `credit_limit: Option<Money>` (permitted strictly when `kind == CreditCard`)
+  - `last_four: Option<LastFour>` (4 ASCII digits)
+  - `bank_name: Option<BankName>` (`1..=100` chars)
+  - `color: Option<HexColor>` (`#RRGGBB`)
   - `included_in_budget: bool`
+  - `created_at: DateTime<Utc>`, `deleted_at: Option<DateTime<Utc>>`
 - **`AccountBalanceSnapshot` (Child Entity)**:
-  - `id: SnapshotId`
+  - `id: SnapshotId` (`AccountBalanceSnapshotId`, UUID v7)
   - `account_id: AccountId`
   - `family_id: FamilyId`
   - `year_month: YearMonth`   -- 'YYYY-MM'
-  - `closing_balance: SignedMoney` -- signed decimal + `CurrencyCode` (account balances can be negative, e.g., overdraft or credit card debt, whereas `Money` is strictly `>= 0`)
+  - `closing_balance: SignedMoney` -- signed decimal + `CurrencyCode` (folds in `opening_balance` on the first snapshot)
   - `computed_at: DateTime<Utc>`
 
-*Note: Current balance for display = latest snapshot `closing_balance` + delta from ledger transactions since snapshot date. Snapshot is computed monthly by `accounts_service` on EventBridge Scheduler trigger.*
+*Note: Current balance for display = latest snapshot `closing_balance` + delta from active (`deleted_at IS NULL`) ledger transactions since snapshot month-end (or `opening_balance` + full active ledger sum before the first snapshot). Snapshot computation runs monthly on EventBridge Scheduler trigger (wired in Sprint 6).*
 
 ---
 
 ## 3. Ledger Core Context
 
 ### Responsibility
-Double-entry compatible financial movement recording. Manages income, expenses, P2P transfers, cash withdrawals, and adjustments.
+Double-entry compatible financial movement recording and category management. Manages income, expenses, internal/cross-currency transfers, cash withdrawals, loan payment outflows, and immutable accounting amendments.
 
 ### Aggregates & Entities
 - **`Transaction` (Aggregate Root)**:
@@ -92,20 +97,24 @@ Double-entry compatible financial movement recording. Manages income, expenses, 
   - `family_id: FamilyId`
   - `recorded_by: MemberId`
   - `kind: TransactionKind` (`Income`, `Expense`, `Transfer`, `CashWithdrawal`, `LoanPayment`, `Reversal`)
-    - *`LoanPayment`: Outflow recorded when a loan payment is made, linked from debt planner via event.*
-    - *`Reversal`: Negates a prior incorrect transaction as part of the amendment pattern.*
-  - `amount: Money`
-  - `destination_amount: Option<Money>` -- for cross-currency transfers only; holds the amount received in the destination account's currency. When present, `amount` holds the source deduction in source currency.
+    - *`CashWithdrawal`: Outflow from a non-cash account (`CreditCard`, `DebitCard`, `BankAccount`) into a `Cash` account (supports same-currency and cross-currency ATM withdrawals).*
+    - *`LoanPayment`: Outflow recorded when a loan payment is made, linked from Debt Planner via EventBridge.*
+    - *`Reversal`: Negates a superseded transaction as part of `TransactionAmendment` by swapping `source_account_id` ↔ `destination_account_id` (and `amount` ↔ `destination_amount` on cross-currency rows).*
+  - `amount: PositiveMoney` (strictly `> 0`, in source currency — or destination currency for external `Income` / `Reversal` inflows)
+  - `destination_amount: Option<PositiveMoney>` -- required iff source and destination account currencies differ on `Transfer`, `CashWithdrawal`, or their `Reversal`; forbidden when currencies match.
   - `source_account_id: Option<AccountId>`
   - `destination_account_id: Option<AccountId>`
-  - `category_id: Option<CategoryId>` -- nullable for `Transfer`, `LoanPayment`, and `Reversal` kinds
-  - `tags: Vec<String>`
-  - `occurred_at: DateTime<Utc>`
-  - `amendment_of_id: Option<TransactionId>` -- points to the original transaction being corrected
-  - `idempotency_key: Uuid`
-- **`Category` (Entity)**: `id: CategoryId`, `family_id: Option<FamilyId>`, `name: String`, `kind: TransactionKind`, `color: HexColor`
+  - `category_id: Option<CategoryId>` -- required for `Income` (`CategoryKind::Income`) and `Expense` (`CategoryKind::Expense`); optional (`CategoryKind::Transfer`) for `Transfer` and `CashWithdrawal`; `None` for `LoanPayment` and `Reversal`.
+  - `tags: Vec<Tag>` (`<= 20` unique trimmed tags, `1..=40` chars each)
+  - `description: Option<TransactionDescription>` (`1..=500` chars)
+  - `occurred_at: DateTime<Utc>`, `created_at: DateTime<Utc>`
+  - `amendment_of_id: Option<TransactionId>` -- points to the superseded original transaction
+  - `idempotency_key: Uuid` (`UNIQUE (family_id, idempotency_key)`)
+  - `deleted_at: Option<DateTime<Utc>>` -- set only by `DELETE /transactions/{id}` (never set on amended originals)
+- **`Category` (Aggregate Root)**:
+  - `id: CategoryId` (UUID v4), `family_id: Option<FamilyId>` (`None` = read-only global system category), `name: CategoryName` (`1..=100` chars), `kind: CategoryKind` (`Income`, `Expense`, `Transfer`), `icon: Option<CategoryIcon>` (`1..=50` chars), `color: Option<HexColor>`, `deleted_at: Option<DateTime<Utc>>`
 
-*Note on Transaction Immutability: `Transaction` has no update methods. Corrections use the `TransactionAmendment` pattern: `POST /transactions/{id}/amend` creates a `Reversal` entry + new corrected entry, both with `amendment_of_id` pointing to the original.*
+*Note on Transaction Immutability: `Transaction` has no in-place update methods (`PUT /transactions/{id}` returns `405`). Corrections use `POST /transactions/{id}/amend`, which atomically inserts a `Reversal` entry (with deterministic derived `idempotency_key`) + a corrected `Transaction` (`Reversal.id < Corrected.id`), keeping `original.deleted_at = NULL` so snapshot balance math stays exact.*
 
 ---
 

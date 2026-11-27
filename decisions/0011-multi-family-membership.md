@@ -45,6 +45,7 @@ Chosen option: **Option 3 — Global User Identity with `X-Family-Id` Context He
    pub struct AuthClaims {
        pub user_id: UserId,
        pub family_id: FamilyId,
+       pub member_id: MemberId,
        pub role: Role,
        pub permissions: Vec<Permission>,
        pub email: Option<Email>,
@@ -52,12 +53,12 @@ Chosen option: **Option 3 — Global User Identity with `X-Family-Id` Context He
    ```
    The middleware extracts `user_id` from the JWT and `family_id` from `X-Family-Id`, then validates against `family_members`:
    ```sql
-   SELECT role, permissions 
+   SELECT id AS member_id, role, permissions 
    FROM family_members 
    WHERE family_id = $1 AND user_id = $2 AND deleted_at IS NULL;
    ```
 4. **Profile & Workspace Switching API**:
-   * `GET /profile/families` — returns the list of all families the user belongs to, including their roles and display names.
+   * `GET /profile/families` — returns the list of all families the user belongs to, including their `member_id`, `role` (`owner`, `member`, `child`, `guest`), `permissions` (for `Role::Guest`), and `display_name`.
 
 ### Positive Consequences
 

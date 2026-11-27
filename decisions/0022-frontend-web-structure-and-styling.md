@@ -1,6 +1,6 @@
 # 0022. Frontend Web Module Organization, Suffixless Role Folders, and Three-Layer Styling
 
-* **Status**: Proposed
+* **Status**: Accepted
 * **Date**: 2026-11-27
 * **Deciders**: Project Owner / HomeHarmony Engineering Team
 * **Related**: [ADR-0004](0004-multi-repo-organization.md), [ADR-0018](0018-ai-native-modular-platform-and-sdui.md), [ADR-0021](0021-angular-spa-architecture-and-ui-library.md)

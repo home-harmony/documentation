@@ -1,7 +1,7 @@
 # 0020. Atomic Aggregate Update Port and Targeted Writes on Aurora DSQL
 
-* **Status**: Proposed
-* **Date**: 2026-11-24
+* **Status**: Accepted
+* **Date**: 2026-11-27
 * **Deciders**: HomeHarmony Engineering Team
 
 ## Context and Problem Statement

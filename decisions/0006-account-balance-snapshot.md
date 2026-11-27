@@ -54,7 +54,7 @@ current_balance
   + SUM(ledger_transactions WHERE account_id = ? AND occurred_at > snapshot_end_of_month AND deleted_at IS NULL)
 ```
 
-For accounts with no snapshot yet, fall back to summing the full ledger.
+For accounts with no snapshot yet, fall back to `payment_accounts.opening_balance` (an immutable baseline set once at account creation, defaulting to `0`, never mutated on transactions) plus the sum of the full ledger (`WHERE deleted_at IS NULL`). When the first month-end snapshot is computed for an account, `opening_balance` is folded into that snapshot's `closing_balance`, so all subsequent post-snapshot queries depend only on `latest_snapshot.closing_balance + delta`.
 
 ### Positive Consequences
 

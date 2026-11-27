@@ -32,8 +32,8 @@ CREATE TABLE family_members (
   family_id       UUID          NOT NULL REFERENCES family_families(id),
   user_id         UUID          NOT NULL,        -- Cognito sub
   display_name    VARCHAR(100)  NOT NULL,
-  role            VARCHAR(10)   NOT NULL CHECK (role IN ('owner','member','child','other')),
-  permissions     JSONB         NOT NULL DEFAULT '[]'::jsonb,  -- JSON array of Permission flags (used when role = 'other')
+  role            VARCHAR(10)   NOT NULL CHECK (role IN ('owner','member','child','guest')), -- migrated from 'other' -> 'guest' in Sprint 3 Slice B0
+  permissions     JSONB         NOT NULL DEFAULT '[]'::jsonb,  -- JSON array of Permission flags (used when role = 'guest')
   relationship    VARCHAR(50),                    -- e.g. 'Grandma', 'Cousin'
   joined_at       TIMESTAMPTZ   NOT NULL DEFAULT now(),
   deleted_at      TIMESTAMPTZ,
@@ -48,8 +48,8 @@ CREATE TABLE family_invite_tokens (
   id              UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
   token_hash      CHAR(64)      NOT NULL UNIQUE,
   family_id       UUID          NOT NULL REFERENCES family_families(id),
-  role            VARCHAR(10)   NOT NULL CHECK (role IN ('member','child','other')),
-  permissions     JSONB         NOT NULL DEFAULT '[]'::jsonb,  -- JSON array of Permission flags for Role::Other invites
+  role            VARCHAR(10)   NOT NULL CHECK (role IN ('member','child','guest')), -- migrated from 'other' -> 'guest' in Sprint 3 Slice B0
+  permissions     JSONB         NOT NULL DEFAULT '[]'::jsonb,  -- JSON array of Permission flags for Role::Guest invites
   relationship    VARCHAR(50),
   created_by      UUID          NOT NULL,
   created_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
@@ -72,6 +72,7 @@ CREATE TABLE payment_accounts (
   name                VARCHAR(200)  NOT NULL,
   kind                VARCHAR(20)   NOT NULL CHECK (kind IN ('credit_card','debit_card','cash','bank_account')),
   currency            CHAR(3)       NOT NULL,
+  opening_balance     NUMERIC(19,4) NOT NULL DEFAULT 0, -- immutable initial balance added via ALTER TABLE in Sprint 3 Slice B0
   credit_limit        NUMERIC(19,4),             -- CreditCard only
   last_four           VARCHAR(4),
   bank_name           VARCHAR(100),
@@ -371,7 +372,7 @@ CREATE TABLE exchange_rates (
 
 ---
 
-## 2. Asynchronous Indexes (18 Indexes)
+## 2. Asynchronous Indexes (20 Indexes — 18 Applied + 2 Planned Sprint 3 `Slice B0`)
 
 Indexes are created asynchronously via `CREATE INDEX ASYNC` to respect Aurora DSQL rules (explicit `ASC`/`DESC` sort modifiers are omitted because Aurora DSQL index definitions do not support them; the planner uses backward index scans for `ORDER BY ... DESC`):
 
@@ -387,10 +388,12 @@ CREATE INDEX ASYNC idx_accounts_family ON payment_accounts (family_id);
 -- 3. Balance Snapshots
 CREATE INDEX ASYNC idx_balance_snapshots_account ON account_balance_snapshots (account_id, year_month);
 
--- 4. Ledger Transactions
+-- 4. Ledger Categories & Transactions
+CREATE INDEX ASYNC idx_categories_family ON ledger_categories (family_id); -- planned Sprint 3 Slice B0
 CREATE INDEX ASYNC idx_tx_family_time ON ledger_transactions (family_id, occurred_at, id);
 CREATE INDEX ASYNC idx_tx_account_src ON ledger_transactions (source_account_id, occurred_at);
 CREATE INDEX ASYNC idx_tx_account_dst ON ledger_transactions (destination_account_id, occurred_at);
+CREATE INDEX ASYNC idx_tx_amendment_of ON ledger_transactions (family_id, amendment_of_id); -- planned Sprint 3 Slice B0
 
 -- 5. Debt Loans & Payments
 CREATE INDEX ASYNC idx_loan_kinds_family ON debt_loan_kinds (family_id);

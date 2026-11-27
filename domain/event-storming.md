@@ -30,16 +30,16 @@ sequenceDiagram
 
 | Domain Event | Originating Context | Trigger Condition | Downstream Consumers & Side-Effects |
 | :--- | :--- | :--- | :--- |
-| `FamilyCreated` | Identity & Family | User creates workspace | Seeds default ledger categories |
+| `FamilyCreated` | Identity & Family | User creates workspace | Workspace audit log *(system default `ledger_categories` use shared global `family_id IS NULL` rows seeded idempotently by `migrate_runner`)* |
 | `MemberInvited` | Identity & Family | Owner creates invite token | Delivers invite link / audit log |
 | `MemberJoined` | Identity & Family | Workspace created (`Owner`) or invite accepted | Refreshes family member cache |
 | `MemberRoleChanged` | Identity & Family | Owner modifies role/permissions | Updates active authorization cache |
 | `MemberRemoved` | Identity & Family | Member soft-deleted | Revokes active sessions |
-| `AccountRegistered` | Payment Cards & Accounts | New account added | Initializes account balance tracking |
-| `AccountBalanceSnapshotted` | Payment Cards & Accounts | Month-end EventBridge Scheduler | Computes and stores closing balance in `account_balance_snapshots` |
-| `TransactionRecorded` | Ledger Core | Expense/Income/Transfer recorded | Triggers budget threshold checks & linked credit card loan sync |
-| `TransactionReversed` | Ledger Core | `POST /transactions/{id}/amend` | Reverses prior transaction effect; links new corrected entry via `amendment_of_id` |
-| `TransactionDeleted` | Ledger Core | Soft-delete transaction | Reverses balance/envelope impact |
+| `AccountRegistered` | Payment Cards & Accounts | New account added (`POST /accounts`) | Carries `{ family_id, account_id, owner_member_id, kind, currency, occurred_at }`; initializes account tracking *(account metadata updates/deletes emit 0 events)* |
+| `AccountBalanceSnapshotted` | Payment Cards & Accounts | Month-end snapshot computation | Carries `{ family_id, account_id, year_month, closing_balance, occurred_at }` after idempotent upsert in `account_balance_snapshots` *(EventBridge Scheduler wired in Sprint 6)* |
+| `TransactionRecorded` | Ledger Core | `Income`/`Expense`/`Transfer`/`CashWithdrawal` recorded or amended (`Corrected` entry) | Carries `{ family_id, transaction_id, recorded_by, kind, amount, destination_amount, source_account_id, destination_account_id, category_id, amendment_of_id, occurred_at }`; triggers budget threshold checks & linked credit card loan sync (`0` events on idempotent replay) |
+| `TransactionReversed` | Ledger Core | `POST /transactions/{id}/amend` | Carries `{ family_id, reversal_transaction_id, corrected_transaction_id, amendment_of_id, source_account_id, destination_account_id, amount, destination_amount, reversed_by, occurred_at }` alongside `TransactionRecorded` for the corrected entry |
+| `TransactionDeleted` | Ledger Core | `DELETE /transactions/{id}` soft-delete | Carries `{ family_id, transaction_id, source_account_id, destination_account_id, deleted_by, occurred_at }`; reverses downstream budget/loan projections |
 | `RecurringPaymentRegistered` | Recurring Payments | New bill/subscription added | Recalculates total committed obligations; pre-seeds draft budget envelopes |
 | `RecurringPaymentRecorded` | Recurring Payments | Bill paid | Advances `next_due_date` by frequency; links to ledger transaction |
 | `RecurringPaymentMissed` | Recurring Payments | Due date passed +1 day | Triggers push notification reminder |
