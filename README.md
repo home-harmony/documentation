@@ -61,11 +61,13 @@ documentation/
 │   ├── business-plan.md               # MVP problem, solution, multi-currency scope & cost model
 │   ├── sprint-roadmap.md              # S1-S7 execution roadmap (34+ migrations, ~15 weeks)
 │   ├── sprint-1/sprint_1_summary.md   # Sprint 1 completion summary (AWS, Rust, 34 migrations)
-│   └── sprint-2/
-│       ├── sprint_2_plan.md           # Sprint 2 backend vertical-slice plan (Identity, Auth, Option B2 SAM)
-│       ├── sprint_2_ui_plan.md        # Sprint 2 UI vertical-slice plan (Angular SPA, spartan/ui, PKCE, EN/RU)
-│       ├── sprint_2_review_fix_plan.md # Sprint 2 two-axis review remediation plan & tracker
-│       └── aws-deployment-guide.md    # Sprint 2 AWS upgrade, DSQL role bootstrap & smoke-test guide
+│   ├── sprint-2/
+│   │   ├── sprint_2_plan.md           # Sprint 2 backend vertical-slice plan (Identity, Auth, Option B2 SAM)
+│   │   ├── sprint_2_ui_plan.md        # Sprint 2 UI vertical-slice plan (Angular SPA, spartan/ui, PKCE, EN/RU)
+│   │   ├── sprint_2_review_fix_plan.md # Sprint 2 two-axis review remediation plan & tracker
+│   │   └── aws-deployment-guide.md    # Sprint 2 AWS upgrade, DSQL role bootstrap & smoke-test guide
+│   └── sprint-3/
+│       └── sprint_3_plan.md           # Sprint 3 3-phase plan (Phase 0 Review, Backend, Web UI)
 │
 └── testing/
     └── testing-strategy.md            # Test pyramid: Unit, Testcontainers PG, Axum, Spec Traceability
@@ -80,6 +82,7 @@ documentation/
 * **[Sprint 2 AWS Deployment & Verification Guide](roadmap/sprint-2/aws-deployment-guide.md)** — Focused PowerShell upgrade runbook for deploying Sprint 2 (`family_service`, `36` migrations, `familyledger_app` role bootstrap, live Cognito + `X-Family-Id` smoke tests).
 * **[Sprint 1 Completion Summary](roadmap/sprint-1/sprint_1_summary.md)** — Delivered AWS infrastructure, Rust workspace, 34 Aurora DSQL migrations, and spec-driven governance.
 * **[Sprint 2 Execution Plan (Backend)](roadmap/sprint-2/sprint_2_plan.md)** & **[Sprint 2 UI Plan (Angular SPA)](roadmap/sprint-2/sprint_2_ui_plan.md)** — Vertical-slice plans for `family_service` (Option B2 SAM) and the Angular Web SPA (`spartan/ui`, Cognito PKCE, EN/RU).
+* **[Sprint 3 Execution Plan (3-Phase)](roadmap/sprint-3/sprint_3_plan.md)** — Phase 0 (Domain, Use Cases & Event Storming Review), Phase 1 (`accounts_service` & `ledger_service`), and Phase 2 (Angular SPA `features/accounts` & `features/ledger`).
 
 ### 🏛️ Architecture & Domain Model
 * **[System Architecture Overview](architecture/system-overview.md)** — Serverless topology, microservices inventory, and scheduled EventBridge flows.
