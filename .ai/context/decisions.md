@@ -35,3 +35,7 @@ Chronological summary complementing formal Architecture Decision Records in [`do
 - **Alternatives rejected**: Sub-1.0 lightweight Angular UI libraries lacking charts (`Guild of Gleks UI`, `ng-oat`, `Frakton NG`, `eagami/ui`, `Revo UI`); heavyweight suites + custom SRP auth screens in Sprint 2.
 - **See**: [`0021-angular-spa-architecture-and-ui-library.md`](../../decisions/0021-angular-spa-architecture-and-ui-library.md) and [`sprint_2_ui_plan.md`](../../roadmap/sprint-2/sprint_2_ui_plan.md).
 
+## 2026-11-27 — Frontend Bounded-Context Slices, Suffixless Role Folders & 3-Layer CSS (`ADR-0022`, *Proposed*)
+- **Proposal**: Refactor `frontend-web/` before Sprint 3 into progressive DDD bounded-context slices (`core/` $\leftarrow$ `shared/` $\leftarrow$ `features/<context>/`), Angular 20+ suffixless filenames inside explicit role folders (`pages/`, `components/`, `services/`, `stores/`, `guards/`, `interceptors/`, `pipes/`, `models/`, `utils/`), multi-file non-trivial components with 3-layer styling (`spartan/ui` primitives $\rightarrow$ `@layer components` `.fl-*` $\rightarrow$ component native CSS + OKLCH `var(--*)`), and a symmetric `frontend-web/.ai/` rules/skills structure.
+- **See**: [`0022-frontend-web-structure-and-styling.md`](../../decisions/0022-frontend-web-structure-and-styling.md).
+

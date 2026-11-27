@@ -3,7 +3,7 @@
 Welcome to the central documentation repository for **HomeHarmony** (`FamilyLedger` internal product/architecture name), a private, family-shared financial hub built on AWS Serverless and Rust.
 
 > 🇷🇺 **Для пользователей и членов семьи**: Описание проекта простыми словами на русском языке доступно в файле **[README.ru.md](README.ru.md)**.
-> 🤖 **AI IDE Setup**: Because `documentation/` and `backend/` are separate Git repositories ([ADR-0004](decisions/0004-multi-repo-organization.md)), open both folders together as a **multi-root workspace** (not the parent `home-harmony/` folder) so `AGENTS.md` and `.agents/skills.json` auto-discover cleanly.
+> 🤖 **AI IDE Setup**: Because `documentation/`, `backend/`, and `frontend-web/` are separate Git repositories ([ADR-0004](decisions/0004-multi-repo-organization.md)), open the active folders together as a **multi-root workspace** (not the parent `home-harmony/` folder) so `AGENTS.md` and `.agents/skills.json` auto-discover cleanly.
 
 ---
 
@@ -33,7 +33,7 @@ documentation/
 ├── research/                          # Phase 1 factual primary-source research spikes (behavior specs live in ../backend/specs/)
 │
 ├── decisions/                         # Architectural Decision Records (ADRs)
-│   ├── README.md                      # ADR index (0001–0021) & MADR template
+│   ├── README.md                      # ADR index (0001–0022) & MADR template
 │   ├── 0001-aurora-dsql-serverless-db.md   # ADR 0001: Amazon Aurora DSQL
 │   ├── 0002-keyset-pagination.md           # ADR 0002: Keyset Cursor Pagination
 │   ├── 0003-rust-ddd-clean-architecture.md # ADR 0003: Clean Architecture / DDD in Rust
@@ -54,7 +54,8 @@ documentation/
 │   ├── 0018-ai-native-modular-platform-and-sdui.md # ADR 0018: AI-Native Modular Platform & SDUI
 │   ├── 0019-declarative-test-specifications.md # ADR 0019: Declarative Behavior Specs & AI Workflow
 │   ├── 0020-atomic-aggregate-update-port.md # ADR 0020 (Proposed): Atomic Aggregate Update Port & Targeted Writes
-│   └── 0021-angular-spa-architecture-and-ui-library.md # ADR 0021: Angular SPA, spartan/ui & Cognito PKCE
+│   ├── 0021-angular-spa-architecture-and-ui-library.md # ADR 0021: Angular SPA, spartan/ui & Cognito PKCE
+│   └── 0022-frontend-web-structure-and-styling.md # ADR 0022 (Proposed): Frontend Bounded-Context Slices, Suffixless Role Folders & 3-Layer CSS
 │
 ├── roadmap/
 │   ├── business-plan.md               # MVP problem, solution, multi-currency scope & cost model
@@ -89,7 +90,7 @@ documentation/
 * **[Aurora DSQL Guide & Release Tracker](architecture/aurora-dsql.md)** — Architectural constraints, UUID v4/v7 strategy, OCC/read-only patterns, and [official Aurora DSQL release notes](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/release-notes.html) tracking.
 
 ### 🤖 AI-First & Spec-Driven Workflow
-* **[AGENTS.md](AGENTS.md)** & **[AI Development Guide](ai-development-guide.md)** — Entry point and practical playbooks for our 7 specialized skills (`domain-and-adr`, `spec-driven-dev`, `rust-patterns`, `rust-testing`, `dsql-migrations`, `diagnosing-bugs`, `code-review`).
-* **[Architectural Decision Records (ADRs 0001–0021)](decisions/README.md)** — Chronological record of architectural decisions.
+* **[AGENTS.md](AGENTS.md)** & **[AI Development Guide](ai-development-guide.md)** — Entry point and practical playbooks for our 9 specialized skills (`domain-and-adr`, `spec-driven-dev`, `code-review`, `rust-patterns`, `rust-testing`, `dsql-migrations`, `diagnosing-bugs`, `angular-patterns`, `angular-testing`).
+* **[Architectural Decision Records (ADRs 0001–0022)](decisions/README.md)** — Chronological record of architectural decisions.
 * **[Testing Strategy](testing/testing-strategy.md)** — Layer 1 pure domain tests, Layer 2a Testcontainers PostgreSQL, Layer 2b Axum `oneshot`, and `spec_traceability`.
 

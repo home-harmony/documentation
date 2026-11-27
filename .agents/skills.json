@@ -1,6 +1,7 @@
 {
   "entries": [
     { "path": ".ai/skills" },
-    { "path": "../backend/.ai/skills" }
+    { "path": "../backend/.ai/skills" },
+    { "path": "../frontend-web/.ai/skills" }
   ]
 }

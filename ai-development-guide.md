@@ -1,18 +1,18 @@
 # AI-First & Spec-Driven Development Guide — HomeHarmony
 
-Practical handbook for working effectively with AI agents across the `documentation/` and `backend/` repositories using our **7 optimized skills**, modular **rules**, **declarative specifications**, and built-in Antigravity slash commands.
+Practical handbook for working effectively with AI agents across the `documentation/`, `backend/`, and `frontend-web/` repositories using our **9 optimized skills**, modular **rules**, **declarative specifications**, and built-in Antigravity slash commands.
 
 ---
 
 ## 1. How the System Fits Together
 
-To keep every customization tracked on GitHub across our two-repository umbrella ([ADR-0004](./decisions/0004-multi-repo-organization.md)), AI configuration lives inside `documentation/` and `backend/`—never at the untracked `home-harmony/` parent folder. **IDE Setup**: open `documentation/` and `backend/` together as a **multi-root workspace** (two workspace folders) rather than opening the parent `home-harmony/` directory; otherwise Antigravity cannot walk downward to discover either repo's `AGENTS.md` or `.agents/skills.json`.
+To keep every customization tracked on GitHub across our multi-repository umbrella ([ADR-0004](./decisions/0004-multi-repo-organization.md)), AI configuration lives inside `documentation/`, `backend/`, and `frontend-web/`—never at the untracked `home-harmony/` parent folder. **IDE Setup**: open `documentation/`, `backend/`, and `frontend-web/` together as a **multi-root workspace** rather than opening the parent `home-harmony/` directory; otherwise Antigravity cannot walk downward to discover each repo's `AGENTS.md` or `.agents/skills.json`.
 
-| Layer | Purpose | Location (`documentation/` + `backend/`) | When Loaded |
+| Layer | Purpose | Location (`documentation/` + `backend/` + `frontend-web/`) | When Loaded |
 | :--- | :--- | :--- | :--- |
-| **Entry Points** | Orientation, reading order, skill routing, mandatory gates | [`documentation/AGENTS.md`](./AGENTS.md), [`../backend/AGENTS.md`](../backend/AGENTS.md) | Always at session start |
-| **Rules** | Short, non-negotiable invariants & prohibitions | [`documentation/.ai/rules/common.md`](./.ai/rules/common.md), `backend/.ai/rules/{backend-rust,aurora-dsql}.md` | Always when working in scope |
-| **Skills (7)** | On-demand step-by-step workflows & checklists | `documentation/.ai/skills/*`, `backend/.ai/skills/*` (auto-discovered via `.agents/skills.json`) | Loaded only when a task matches |
+| **Entry Points** | Orientation, reading order, skill routing, mandatory gates | [`documentation/AGENTS.md`](./AGENTS.md), [`../backend/AGENTS.md`](../backend/AGENTS.md), [`../frontend-web/AGENTS.md`](../frontend-web/AGENTS.md) | Always at session start |
+| **Rules** | Short, non-negotiable invariants & prohibitions | [`documentation/.ai/rules/common.md`](./.ai/rules/common.md), `backend/.ai/rules/{backend-rust,aurora-dsql}.md`, `frontend-web/.ai/rules/{frontend-angular,frontend-styling}.md` | Always when working in scope |
+| **Skills (9)** | On-demand step-by-step workflows & checklists | `documentation/.ai/skills/*`, `backend/.ai/skills/*`, `frontend-web/.ai/skills/*` (auto-discovered via `.agents/skills.json`) | Loaded only when a task matches |
 | **Specs & Memory** | Human-approved truth & chronological decisions | [`../backend/specs/`](../backend/specs/README.md), [`documentation/.ai/context/`](./.ai/context/project.md) | Referenced per task |
 
 ---
@@ -26,7 +26,8 @@ To keep every customization tracked on GitHub across our two-repository umbrella
 | **Implement a feature, aggregate, port, or handler in Rust** | `rust-patterns` + `rust-testing` | `backend/` | Rust code (`domain/`, `infrastructure/`, `api/`, `lambdas/*`) + `tests/*.rs` |
 | **Add an Aurora DSQL table, async index, or SQLx query** | `dsql-migrations` | `backend/` | `migrations/{TS}_{desc}.sql` + updated `.sqlx/` offline cache |
 | **Debug a failing test, OCC retry (`40001`), or pagination/Decimal bug** | `diagnosing-bugs` | `backend/` | Minimal failing repro test $\rightarrow$ root-cause fix $\rightarrow$ regression test |
-| **Review code, check spec coverage, or prepare a PR** | `code-review` | Both | Two-axis audit report + `spec_traceability` check + One-Way Door summary |
+| **Implement an Angular bounded-context view, dialog, store, or CSS layout** | `angular-patterns` + `angular-testing` | `frontend-web/` | Interactive UI mock $\rightarrow$ suffixless role-folder Angular slice + Vitest specs |
+| **Review code, check spec coverage, or prepare a PR** | `code-review` | All touched | Two-axis audit report + automated repo gates + One-Way Door summary |
 | **Explore multi-step financial math or SDUI cards visually** | Built-in `generative_ui` | Chat / Artifacts | Interactive HTML state-machine / UI widget |
 | **Long sessions, big plans, or capturing new lessons** | Built-in `/plan`, `/compact`, `/learn` | Session / Config | Plan review, compacted context, persistent memory |
 

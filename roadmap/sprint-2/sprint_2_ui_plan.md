@@ -47,27 +47,19 @@ flowchart LR
     APIGW --> FamilyLambda["family_service Lambda\n(9 Identity & Family Routes)"]
 ```
 
-### Target Module Layout (`frontend-web/`)
+### Target Module Layout (`frontend-web/`, updated per [`ADR-0022`](../../decisions/0022-frontend-web-structure-and-styling.md))
 
 ```text
 frontend-web/
+├── .ai/                   # Modular rules (frontend-angular, frontend-styling) & skills (angular-patterns, angular-testing)
 ├── libs/ui/               # Owned spartan/ui helm components (@spartan-ng/helm/* via components.json)
-└── src/app/
-    ├── core/
-    │   ├── api/           # Pure backend wire DTOs (family.dto.ts)
-    │   ├── auth/          # PKCE OAuth2 service, AuthStore (signals), authGuard, callback/logout routes
-    │   ├── config/        # Typed AppConfig + APP_CONFIG InjectionToken
-    │   ├── context/       # WorkspaceStore (active family_id, role, permissions, switcher state), familyContextGuard
-    │   ├── errors/        # RFC 9457 ProblemDetails model + typed error.code -> i18n key map
-    │   ├── http/          # authInterceptor, familyHeaderInterceptor, problemDetailsInterceptor, typed API client
-    │   └── i18n/          # EN/RU translation dictionaries, I18nService (signal), TranslatePipe
-    ├── shared/
-    │   └── components/    # AppShellComponent, WorkspaceSwitcherComponent, RoleBadgeComponent, PermissionChecklistComponent
-    └── features/
-        ├── onboarding/    # First-run Create Family / Join by Invite landing view
-        ├── family/        # Workspace overview, Family Settings (PUT /families/{id})
-        ├── members/       # Members roster (GET), Invite dialog (POST /invites), Role/Permissions edit (PATCH), Remove (DELETE)
-        └── invite-accept/ # Deep-link /join?familyId=...&token=... acceptance view (POST /families/{id}/members)
+└── src/
+    ├── styles/            # Shared @layer components (.fl-*) imported once into src/styles.css
+    └── app/
+        ├── core/          # App-wide singletons in explicit role folders (pages, services, stores, guards, interceptors, pipes, models, utils)
+        ├── shared/        # Cross-context UI shells & pickers (components/{app-shell, top-controls, workspace-switcher, currency-combobox})
+        └── features/
+            └── family/    # Identity & Family bounded context (pages/*, components/*, services/family-api, models/family-dto, utils/*)
 ```
 
 ---

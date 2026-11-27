@@ -1,7 +1,7 @@
 # AGENTS.md — HomeHarmony (`documentation/` & Umbrella Entry Point)
 
 > Primary entry point for AI agents working in `documentation/` or across the `home-harmony/` repositories.
-> **Two-Repo Rule ([ADR-0004](./decisions/0004-multi-repo-organization.md))**: `documentation/` and `backend/` are separate Git repositories. Never write project files at the untracked `home-harmony/` root; open `documentation/` and `backend/` as a **multi-root workspace** so both repos' `AGENTS.md` and `.agents/skills.json` auto-discover cleanly.
+> **Multi-Repo Rule ([ADR-0004](./decisions/0004-multi-repo-organization.md))**: `documentation/`, `backend/`, and `frontend-web/` are separate Git repositories. Never write project files at the untracked `home-harmony/` root; open the active repositories together as a **multi-root workspace** so each repo's `AGENTS.md` and `.agents/skills.json` auto-discover cleanly.
 
 ---
 
@@ -14,7 +14,7 @@
 5. [`architecture/system-overview.md`](./architecture/system-overview.md) & [`architecture/api-design.md`](./architecture/api-design.md)
 6. [`ai-development-guide.md`](./ai-development-guide.md) — developer playbook for using skills per task type
 
-When working in Rust code or migrations, also read [`../backend/AGENTS.md`](../backend/AGENTS.md).
+When working in Rust code or migrations, also read [`../backend/AGENTS.md`](../backend/AGENTS.md). When working in the Angular SPA, also read [`../frontend-web/AGENTS.md`](../frontend-web/AGENTS.md).
 
 ---
 
@@ -27,7 +27,11 @@ Backend-specific rules (auto-included by [`../backend/AGENTS.md`](../backend/AGE
 - **Backend Rust Rules**: [`../backend/.ai/rules/backend-rust.md`](../backend/.ai/rules/backend-rust.md)
 - **Aurora DSQL Rules**: [`../backend/.ai/rules/aurora-dsql.md`](../backend/.ai/rules/aurora-dsql.md)
 
-### B. Optimized Skills (7 Total, Auto-Discovered via `.agents/skills.json`)
+Frontend-specific rules (auto-included by [`../frontend-web/AGENTS.md`](../frontend-web/AGENTS.md)):
+- **Frontend Angular Rules**: [`../frontend-web/.ai/rules/frontend-angular.md`](../frontend-web/.ai/rules/frontend-angular.md)
+- **Frontend Styling & CSP Rules**: [`../frontend-web/.ai/rules/frontend-styling.md`](../frontend-web/.ai/rules/frontend-styling.md)
+
+### B. Optimized Skills (9 Total, Auto-Discovered via `.agents/skills.json`)
 
 | Scope | Task | Skill (`SKILL.md`) |
 | :--- | :--- | :--- |
@@ -38,6 +42,8 @@ Backend-specific rules (auto-included by [`../backend/AGENTS.md`](../backend/AGE
 | **Backend** | Run Red-Green-Refactor TDD & spec tests at Layer 1 / 2a / 2b hexagonal seams | [`../backend/.ai/skills/rust-testing/SKILL.md`](../backend/.ai/skills/rust-testing/SKILL.md) |
 | **Backend** | Author Aurora DSQL migrations (`1 DDL/file`), async indexes, OCC/keyset SQLx queries | [`../backend/.ai/skills/dsql-migrations/SKILL.md`](../backend/.ai/skills/dsql-migrations/SKILL.md) |
 | **Backend** | Reproduce and isolate bugs scientifically (*"no red test, no theories"*) | [`../backend/.ai/skills/diagnosing-bugs/SKILL.md`](../backend/.ai/skills/diagnosing-bugs/SKILL.md) |
+| **Frontend** | Design bounded-context Angular slices, suffixless role folders, UI mocks & 3-layer CSS | [`../frontend-web/.ai/skills/angular-patterns/SKILL.md`](../frontend-web/.ai/skills/angular-patterns/SKILL.md) |
+| **Frontend** | Write Vitest component/store/interceptor tests across roles, RFC 9457 & EN/RU parity | [`../frontend-web/.ai/skills/angular-testing/SKILL.md`](../frontend-web/.ai/skills/angular-testing/SKILL.md) |
 
 *(For interactive financial/SDUI prototypes, use Antigravity's built-in `generative_ui` skill.)*
 
@@ -47,7 +53,7 @@ Backend-specific rules (auto-included by [`../backend/AGENTS.md`](../backend/AGE
 
 - **Persistent Context**: [`.ai/context/project.md`](./.ai/context/project.md) · [`.ai/context/decisions.md`](./.ai/context/decisions.md)
 - **Research Spikes (Facts Only)**: [`research/`](./research/README.md)
-- **Architecture Decision Records**: [`decisions/`](./decisions/README.md) (ADRs `0001`–`0019`)
+- **Architecture Decision Records**: [`decisions/`](./decisions/README.md) (ADRs `0001`–`0022`)
 - **Behavior Specifications**: [`../backend/specs/`](../backend/specs/README.md) (`VO`, `FM`, `LD`, `LN`, `BG`, `AU`)
 
 ---
@@ -56,6 +62,6 @@ Backend-specific rules (auto-included by [`../backend/AGENTS.md`](../backend/AGE
 
 - **Human Owns Intent**: AI agents write specs only as `Status: Draft` and ADRs only as `Status: Proposed`. Never set `Approved` or `Accepted` autonomously.
 - **Blind Spec Testing & Mismatch Halt**: Generate tests from `Approved` specs without reading function bodies. If a faithful spec test fails, halt and emit `SPEC–CODE MISMATCH DETECTED`—never weaken assertions.
-- **Mandatory Self-Review**: Run [`code-review`](./.ai/skills/code-review/SKILL.md) and pass `cargo clippy --workspace --all-targets -- -D warnings` + `cargo test --workspace` (including `spec_traceability`) in `../backend/` after code changes.
+- **Mandatory Self-Review**: Run [`code-review`](./.ai/skills/code-review/SKILL.md) and pass repo verification gates (`cargo clippy --workspace --all-targets -- -D warnings` + `cargo test --workspace` in `../backend/`; `pnpm lint` + `pnpm test` + `pnpm build` in `../frontend-web/`) after code changes.
 - **API & Domain Sync**: Keep [`architecture/api-design.md`](./architecture/api-design.md) and [`domain/ubiquitous-language.md`](./domain/ubiquitous-language.md) synchronized with code changes.
 - **Local Scratch**: Put temporary personal notes in `.ai/local/` (gitignored).

@@ -34,6 +34,7 @@ An **Architectural Decision Record (ADR)** is a lightweight document capturing a
 | [0019](0019-declarative-test-specifications.md) | Declarative Behavior Specifications and AI-First Verification Workflow | **Accepted** | 2026-11-20 |
 | [0020](0020-atomic-aggregate-update-port.md) | Atomic Aggregate Update Port and Targeted Writes on Aurora DSQL | **Proposed** | 2026-11-24 |
 | [0021](0021-angular-spa-architecture-and-ui-library.md) | Angular Web SPA Architecture, UI Component Library, and Cognito Auth Flow | **Accepted** | 2026-11-26 |
+| [0022](0022-frontend-web-structure-and-styling.md) | Frontend Web Module Organization, Suffixless Role Folders, and Three-Layer Styling | **Proposed** | 2026-11-27 |
 
 ---
 
